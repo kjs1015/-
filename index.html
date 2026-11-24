@@ -361,6 +361,10 @@ const CONFIG = {
   // 벌점: 기숙사 규칙 위반
   PENALTY_WARN: 10,         // 이 점수를 넘으면 부모님 호출
   PENALTY_OUT: 20,          // 이 점수면 강제 퇴사 = 퇴학
+  // 반입 금지물품
+  CONTRA_ENTRY_CATCH: 0.25, // 복귀할 때 짐 검사에 걸릴 확률
+  CONTRA_INSPECT: 0.12,     // 매 턴 물건 하나당 방 검사에 걸릴 확률
+  CONTRA_PENALTY: 4,        // 걸리면 벌점
 };
 
 // ---------- 2. 기본 데이터 ----------
@@ -396,13 +400,23 @@ const INV_NAME = { disguise: '🧢 변장 모자', hint: '📘 퀴즈 힌트' };
 
 // 룸메이트 (가상의 인물). 입학할 때 한 명이 무작위로 정해진다.
 const ROOMMATES = [
-  { id: 'haram', name: '하람', type: '모범생', emoji: '📚', desc: '알람보다 먼저 일어나 영단어를 외우는 룸메. 규칙 어기는 걸 싫어한다.' },
-  { id: 'yujin', name: '유진', type: '야식왕', emoji: '🍗', desc: '사물함이 컵라면 창고인 룸메. 밤 11시만 되면 눈이 반짝인다.' },
-  { id: 'jian',  name: '지안', type: '운동광', emoji: '🏀', desc: '새벽 6시에 운동장을 뛰는 룸메. 체단실 출석률 100%.' },
-  { id: 'daon',  name: '다온', type: '인싸',   emoji: '🎤', desc: '모르는 사람이 없는 룸메. 방에 늘 손님이 있다.' },
+  { id: 'yejun',   name: '심예준', short: '예준', type: '모범생', emoji: '📚', desc: '알람보다 먼저 일어나 영단어를 외우는 룸메. 규칙 어기는 걸 싫어해서, 방에 금지물품이 있으면 눈치를 준다.' },
+  { id: 'yumin',   name: '한유민', short: '유민', type: '야식왕', emoji: '🍗', desc: '사물함이 컵라면 창고인 룸메. 밤 11시만 되면 눈이 반짝인다. 전기포트를 보면 좋아서 어쩔 줄 모른다.' },
+  { id: 'daehyun', name: '김대현', short: '대현', type: '운동광', emoji: '🏀', desc: '새벽 6시에 운동장을 뛰는 룸메. 체단실 출석률 100%.' },
+  { id: 'jaewon',  name: '정재원', short: '재원', type: '조용한 룸메', emoji: '🎧', desc: '말수가 적고 늘 이어폰을 끼고 있는 룸메. 무슨 생각을 하는지 잘 모르겠다.' },
 ];
 function roommateOf(s) { return ROOMMATES.find(r => r.id === s.roommate) || ROOMMATES[0]; }
 const TRACK_NAME = { lib: '📖 인문·사회(문과)', sci: '🔬 자연·공학(이과)' };
+
+// 기숙사 반입 금지물품: 귀가 후 복귀할 때 몰래 챙겨 간다. 갖고 있으면 매 턴 효과가 있지만 방 검사에 걸리면 압수 + 벌점.
+const CONTRABAND = [
+  { id: 'kettle',  name: '전기포트',     emoji: '🫖', desc: '소등 후 라면을 끓여 먹는다. 매 턴 체력 감소가 3 줄어든다' },
+  { id: 'mat',     name: '전기매트',     emoji: '🔥', desc: '뜨끈한 잠자리. 매 턴 체력 +3 (겨울엔 스트레스 -3 추가)' },
+  { id: 'phone2',  name: '공기계',       emoji: '📱', desc: '제출 안 한 두 번째 폰. 매 턴 사회성 감소가 3 줄고 스트레스 -2' },
+  { id: 'lamp',    name: '독서등',       emoji: '💡', desc: '소등 후 이불 속 공부. 매 턴 지능 감소가 3 줄어든다' },
+  { id: 'console', name: '휴대용 게임기', emoji: '🎮', desc: '자기 전 딱 한 판. 매 턴 스트레스 -5, 지능 -1' },
+];
+function contraOf(id) { return CONTRABAND.find(c => c.id === id); }
 
 // ---------- 3. 작은 도우미 함수들 ----------
 function formatWon(n) {
@@ -477,7 +491,7 @@ function changesToText(real) {
 // ---------- 5. 새 게임 ----------
 function newGame(name, focus) {
   const s = {
-    version: 4,
+    version: 5,
     name: name, focus: focus, turn: 1, money: 0,
     stats: { int: CONFIG.START_STAT, hp: CONFIG.START_STAT, soc: CONFIG.START_STAT, fame: CONFIG.START_STAT },
     lowStreak: { int: 0, hp: 0, soc: 0, fame: 0 },
@@ -498,6 +512,7 @@ function newGame(name, focus) {
     roommate: ROOMMATES[Math.floor(Math.random() * ROOMMATES.length)].id, aff: 50, maxAff: 50, minAff: 50,
     track: null, tripCourse: null, presidentTerms: 0, penaltyTotal: 0,
     inv: { disguise: 0, hint: 0 },
+    contra: [], packResult: null,
     exams: [], rivalWins: 0, rivalLosses: 0,
     log: [], ending: null,
   };
@@ -560,10 +575,32 @@ function chooseHome(s, id) {
   const real = applyChanges(s, res.deltas);
   s.homeChoice = { id: id, text: res.text, changes: real };
   addLog(s, opt.emoji, `격주 주말: ${opt.label} → ${changesToText(real) || '변화 없음'}`);
-  s.phase = 'shop';
+  s.phase = 'pack';
+  s.packResult = null;
   return real;
 }
 function goShop(s) { if (s.spun && s.homeChoice) s.phase = 'shop'; }
+
+// 기숙사로 돌아가기 전 짐 싸기: 금지물품 하나를 몰래 챙길 수 있다 (한 번에 하나)
+function packItem(s, id) {
+  if (s.phase !== 'pack' || s.packResult) return null;
+  const c = contraOf(id);
+  if (!c || s.contra.includes(id)) return null;
+  // 조용한 룸메(재원)는 짐 검사 줄에서 슬쩍 가려 준다
+  const catchP = CONFIG.CONTRA_ENTRY_CATCH - (s.roommate === 'jaewon' && s.aff >= 50 ? 0.1 : 0);
+  if (roll(catchP)) {
+    const real = applyChanges(s, { penalty: CONFIG.CONTRA_PENALTY, stress: 5 });
+    s.packResult = { ok: false, text: `기숙사 입구 짐 검사! 가방 속 ${c.emoji} ${c.name}이(가) 딱 걸렸다. 압수.`, changes: real };
+    addLog(s, '🚫', `${c.name} 반입 시도 → 짐 검사 적발, ${changesToText(real)}`);
+    if (checkPenalty(s)) return s.packResult;
+  } else {
+    s.contra.push(id);
+    s.packResult = { ok: true, text: `${c.emoji} ${c.name}을(를) 옷 사이에 숨겨 무사히 들여왔다. 사물함 깊숙이 보관.`, changes: {} };
+    addLog(s, c.emoji, `${c.name} 몰래 반입 성공`);
+  }
+  return s.packResult;
+}
+function leavePack(s) { if (s.phase === 'pack') { s.phase = 'shop'; s.packResult = null; } }
 
 // ---------- 7. 매점 ----------
 function cannotBuyReason(s, item) {
@@ -973,47 +1010,65 @@ function doSpecial(s, eventId) {
 const RANDOM_EVENTS = [
   // ----- 룸메이트 사건 -----
   {
-    id: 'rm_haram', title: '📚 하람의 연등 제안', text: '하람이 문제집을 흔들며 말했다. "오늘 같이 연등하자. 이번 범위 같이 끝내!"',
-    when: s => s.roommate === 'haram', weight: () => 1.4,
+    id: 'rm_yejun', title: '📚 예준이의 연등 제안', text: '예준이가 문제집을 흔들며 말했다. "오늘 같이 연등하자. 이번 범위 같이 끝내!"',
+    when: s => s.roommate === 'yejun', weight: () => 1.4,
     choices: [
       { label: '같이 한다', exp: { int: 8, stress: 4, aff: 8 },
-        run: () => ({ text: '서로 문제를 내 주며 새벽 1시까지. 하람의 설명이 선생님보다 쉽다.', deltas: { int: 8, stress: 4, aff: 8 } }) },
+        run: () => ({ text: '서로 문제를 내 주며 새벽 1시까지. 예준이 설명이 선생님보다 쉽다.', deltas: { int: 8, stress: 4, aff: 8 } }) },
       { label: '피곤해서 거절', exp: { hp: 3, aff: -6 },
-        run: () => ({ text: '"그래… 쉬어." 하람이 혼자 연등실로 갔다. 조금 서운한 눈치다.', deltas: { hp: 3, aff: -6 } }) },
+        run: () => ({ text: '"그래… 쉬어." 예준이가 혼자 연등실로 갔다. 조금 서운한 눈치다.', deltas: { hp: 3, aff: -6 } }) },
     ],
   },
   {
-    id: 'rm_yujin', title: '🍜 유진의 라면 유혹', text: '밤 11시, 유진이 사물함에서 컵라면 두 개를 꺼냈다. "하나는 네 거. 물은 내가 떠 올게."',
-    when: s => s.roommate === 'yujin', weight: () => 1.4,
+    id: 'rm_yejun_contra', title: '😠 예준이의 경고', text: '예준이가 사물함 쪽을 보며 말했다. "그거… 걸리면 나까지 혼나. 치우면 안 돼?"',
+    when: s => s.roommate === 'yejun' && s.contra.length > 0, weight: () => 2,
     choices: [
-      { label: '같이 먹는다', note: '25% 확률로 순찰에 걸림', exp: { stress: -10, aff: 8 },
-        run: s => rollS(s, 0.75)
-          ? { text: '이불 텐트 속 컵라면. 유진과는 이제 전우다.', deltas: { soc: 3, stress: -10, aff: 8 } }
+      { label: '집에 돌려보낸다 (물건 하나 포기)', exp: { aff: 10 },
+        run: s => { const id = s.contra.pop(); const c = contraOf(id); return { text: `${c.emoji} ${c.name}을(를) 다음 귀가 때 집에 두고 오기로 했다. 예준이 표정이 풀렸다.`, deltas: { aff: 10, stress: 2 } }; } },
+      { label: '"절대 안 걸려" 버틴다', exp: { aff: -10 },
+        run: () => ({ text: '예준이가 한숨을 쉬고 이어폰을 꼈다. 방 공기가 무겁다.', deltas: { aff: -10, stress: 4 } }) },
+    ],
+  },
+  {
+    id: 'rm_yumin', title: '🍜 유민이의 라면 유혹', text: '밤 11시, 유민이가 사물함에서 컵라면 두 개를 꺼냈다. "하나는 네 거. 물은 내가 떠 올게."',
+    when: s => s.roommate === 'yumin', weight: () => 1.4,
+    choices: [
+      { label: '같이 먹는다', note: '25% 확률로 순찰에 걸림 (전기포트가 있으면 10%)', exp: { stress: -10, aff: 8 },
+        run: s => rollS(s, s.contra.includes('kettle') ? 0.9 : 0.75)
+          ? { text: s.contra.includes('kettle') ? '전기포트로 끓인 라면은 차원이 다르다. 유민이가 "인생 라면"이라며 감동했다.' : '이불 텐트 속 컵라면. 유민이와는 이제 전우다.', deltas: { soc: 3, stress: -10, aff: s.contra.includes('kettle') ? 12 : 8 } }
           : { text: '국물 냄새에 사감 선생님이 문을 열었다. 둘이 나란히 반성문.', deltas: { penalty: 4, stress: 5, aff: 4 } } },
       { label: '참는다', exp: { hp: 2, aff: -6 },
-        run: () => ({ text: '"의리 없네." 유진이 혼자 후루룩. 냄새 때문에 잠이 안 온다.', deltas: { hp: 2, stress: 3, aff: -6 } }) },
+        run: () => ({ text: '"의리 없네." 유민이가 혼자 후루룩. 냄새 때문에 잠이 안 온다.', deltas: { hp: 2, stress: 3, aff: -6 } }) },
     ],
   },
   {
-    id: 'rm_jian', title: '🏃 지안의 새벽 러닝', text: '새벽 6시, 지안이 이불을 확 걷었다. "뛰러 가자! 논길 한 바퀴!"',
-    when: s => s.roommate === 'jian', weight: () => 1.4,
+    id: 'rm_daehyun', title: '🏃 대현이의 새벽 러닝', text: '새벽 6시, 대현이가 이불을 확 걷었다. "뛰러 가자! 논길 한 바퀴!"',
+    when: s => s.roommate === 'daehyun', weight: () => 1.4,
     choices: [
       { label: '따라 나간다', exp: { hp: 8, stress: -4, aff: 8 },
         run: () => ({ text: '안개 낀 풍산 들판을 달렸다. 숨이 차지만 머리가 맑아졌다.', deltas: { hp: 8, stress: -4, aff: 8 } }) },
       { label: '"5분만…"', exp: { hp: 2, aff: -5 },
-        run: () => ({ text: '5분이 50분이 됐다. 지안이 혀를 찼다.', deltas: { hp: 2, aff: -5 } }) },
+        run: () => ({ text: '5분이 50분이 됐다. 대현이가 혀를 찼다.', deltas: { hp: 2, aff: -5 } }) },
     ],
   },
   {
-    id: 'rm_daon', title: '🎉 다온의 방 파티', text: '다온이 옆방 친구들을 다 불러 모았다. 2인실에 여덟 명이 앉아 있다.',
-    when: s => s.roommate === 'daon', weight: () => 1.4,
+    id: 'rm_jaewon_bread', title: '🥐 책상 위의 빵', text: '아침에 일어나 보니 책상 위에 매점 빵 하나와 우유가 놓여 있다. 재원이는 벌써 나가고 없다.',
+    when: s => s.roommate === 'jaewon' && (s.stress >= 55 || s.stats.hp < 40), weight: () => 1.6,
     choices: [
-      { label: '같이 논다', note: '30% 확률로 순찰에 걸림', exp: { soc: 7, aff: 8 },
-        run: s => rollS(s, 0.7)
-          ? { text: '마피아 게임 세 판. 다온 덕분에 친구가 확 늘었다.', deltas: { soc: 7, fame: 3, stress: -6, aff: 8 } }
-          : { text: '"여기 몇 호실이야?" 타 호실 출입으로 단체 벌점.', deltas: { penalty: 4, soc: 3, aff: 3 } } },
-      { label: '도서관으로 피신', exp: { int: 4, aff: -6 },
-        run: () => ({ text: '조용한 도서관이 천국이다. 돌아오니 다온이 삐져 있다.', deltas: { int: 4, aff: -6 } }) },
+      { label: '고맙다고 메시지 보낸다', exp: { aff: 8, stress: -5 },
+        run: () => ({ text: '"ㅇㅇ" 한 글자 답장. 그래도 왠지 든든하다.', deltas: { aff: 8, stress: -5, hp: 3 } }) },
+      { label: '누가 놓고 갔지? 일단 먹는다', exp: { hp: 3 },
+        run: () => ({ text: '배가 든든해졌다. 누가 놓고 간 걸까.', deltas: { hp: 3, stress: -3 } }) },
+    ],
+  },
+  {
+    id: 'rm_jaewon_rollcall', title: '🎧 이어폰 너머', text: '점호 직전, 재원이가 이어폰 한쪽을 빼며 말했다. "너 내일 수행평가 자료, 프린트 안 했지? 내가 두 장 뽑아 놨어."',
+    when: s => s.roommate === 'jaewon' && s.aff >= 45, weight: () => 1.2,
+    choices: [
+      { label: '받는다', exp: { int: 4, aff: 5 },
+        run: () => ({ text: '"고마워." 재원이는 대답 대신 다시 이어폰을 꼈다.', deltas: { int: 4, aff: 5, stress: -3 } }) },
+      { label: '괜찮다고 사양한다', exp: { aff: -2 },
+        run: () => ({ text: '재원이가 고개를 끄덕이고 프린트를 서랍에 넣었다. 다음 날 아침, 그 서랍이 살짝 열려 있었다.', deltas: { aff: -2, int: 2 } }) },
     ],
   },
   {
@@ -1046,6 +1101,19 @@ const RANDOM_EVENTS = [
         run: () => ({ text: '"…고마워." 빵 하나에 얼음이 조금 녹았다.', deltas: { aff: 10, stress: -2 } }) },
       { label: '그냥 참는다', exp: { stress: 8 },
         run: () => ({ text: '같은 방에서 말 한마디 없이 일주일. 숨이 막힌다.', deltas: { stress: 8, aff: -3 } }) },
+    ],
+  },
+  {
+    id: 'contra_check', title: '🔦 금지물품 일제 점검', text: '"오늘 밤 전 호실 금지물품 점검이 있습니다." 방송이 울렸다. 사물함 속 물건이 떠오른다.',
+    when: s => s.contra.length > 0, weight: s => 0.8 + s.contra.length * 0.4,
+    choices: [
+      { label: '천장 타일 위에 숨긴다', note: '물건이 많을수록 걸리기 쉽다', exp: { stress: 4 },
+        run: s => {
+          if (rollS(s, clamp(0.75 - s.contra.length * 0.1, 0.3, 0.75))) return { text: '사감 선생님 손전등이 천장 바로 아래를 지나갔다. 무사 통과. 심장이 아직도 뛴다.', deltas: { stress: 4 } };
+          const lost = s.contra.splice(0); return { text: `천장 타일이 덜컹. ${lost.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ')} 전부 압수됐다.`, deltas: { penalty: 3 + lost.length * 2, stress: 8 } };
+        } },
+      { label: '자진 제출한다', exp: { penalty: 2 },
+        run: s => { const lost = s.contra.splice(0); return { text: `${lost.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ')}을(를) 내놨다. "솔직해서 이번만 봐준다." 벌점은 조금만.`, deltas: { penalty: 2, stress: -2 } }; } },
     ],
   },
   // ----- 계절·날씨 사건 -----
@@ -1592,34 +1660,44 @@ const QUIZ = {
   SECONDS: 12,         // 문제당 제한 시간
 };
 
+// 계산 없이 배경지식으로 푸는 상식형 문제. 고1이 알 만한 범위에서 난도를 높였다.
 // lv: 난이도 1(쉬움)~3(어려움). 학년이 올라갈수록 어려운 문제가 많이 나온다.
 // a: 정답 / w: 오답 3개. 화면에서 보기 순서를 섞는다.
 const QUIZ_BANK = [
-  // 국어
+  // 국어·문학
   { id: 'k1', lv: 1, subj: '국어', q: '"가랑비에 옷 젖는 줄 모른다"의 뜻은?', a: '사소한 것도 쌓이면 크게 된다', w: ['급할수록 돌아가야 한다', '남의 말을 쉽게 믿으면 안 된다', '비 오는 날엔 우산을 챙겨야 한다'] },
-  { id: 'k2', lv: 1, subj: '국어', q: '맞춤법이 올바른 것은?', a: '어이없다', w: ['어의없다', '어히없다', '어이업다'] },
   { id: 'k3', lv: 1, subj: '국어', q: '"금시초문(今始初聞)"의 뜻은?', a: '이제 처음 들음', w: ['오래전부터 알고 있음', '처음과 끝이 같음', '듣고도 못 들은 척함'] },
-  { id: 'k4', lv: 1, subj: '국어', q: '표준어는?', a: '설거지', w: ['설겆이', '설걷이', '설것이'] },
   { id: 'k5', lv: 1, subj: '국어', q: '"오매불망(寤寐不忘)"의 뜻은?', a: '자나 깨나 잊지 못함', w: ['매우 바빠 쉴 틈이 없음', '잠을 이루지 못함', '오래 기다림'] },
-  { id: 'k6', lv: 2, subj: '국어', q: '훈민정음 초성의 기본자는 모두 몇 개일까?', a: '5개', w: ['3개', '7개', '17개'] },
   { id: 'k7', lv: 1, subj: '국어', q: '맞춤법이 올바른 문장은?', a: '왠지 기분이 좋다', w: ['웬지 기분이 좋다', '왠일로 일찍 왔니?', '웬지 모르게 설렌다'] },
   { id: 'k8', lv: 2, subj: '국어', q: '"소 잃고 외양간 고친다"와 뜻이 가장 비슷한 한자 성어는?', a: '망우보뢰(亡牛補牢)', w: ['일석이조(一石二鳥)', '동문서답(東問西答)', '고진감래(苦盡甘來)'] },
-  { id: 'k9', lv: 1, subj: '국어', q: '"고진감래(苦盡甘來)"의 뜻은?', a: '고생 끝에 즐거움이 온다', w: ['쓴 약이 몸에 좋다', '단것을 너무 먹으면 탈이 난다', '처음엔 쉽지만 나중엔 어렵다'] },
   { id: 'k10', lv: 2, subj: '국어', q: '사동 표현이 쓰인 문장은?', a: '엄마가 아이에게 밥을 먹였다', w: ['도둑이 경찰에게 잡혔다', '문이 바람에 열렸다', '그는 밥을 먹었다'] },
   { id: 'k11', lv: 2, subj: '국어', q: '두음 법칙이 적용된 단어는?', a: '여자(女子)', w: ['남녀(男女)', '공로(功勞)', '신뢰(信賴)'] },
   { id: 'k12', lv: 3, subj: '국어', q: '김소월의 시가 아닌 것은?', a: '서시', w: ['진달래꽃', '엄마야 누나야', '산유화'] },
   { id: 'k13', lv: 2, subj: '국어', q: '윤동주의 유고 시집 제목은?', a: '하늘과 바람과 별과 시', w: ['님의 침묵', '진달래꽃', '청록집'] },
-  { id: 'k14', lv: 3, subj: '국어', q: '시집 『님의 침묵』을 쓴 시인은?', a: '한용운', w: ['김소월', '윤동주', '이육사'] },
-  { id: 'k15', lv: 3, subj: '국어', q: '외래어 표기가 바른 것은?', a: '케이크', w: ['케잌', '케익', '케이끄'] },
+  { id: 'k14', lv: 2, subj: '국어', q: '시집 『님의 침묵』을 쓴 시인은?', a: '한용운', w: ['김소월', '윤동주', '이육사'] },
+  { id: 'k15', lv: 2, subj: '국어', q: '외래어 표기가 바른 것은?', a: '케이크', w: ['케잌', '케익', '케이끄'] },
+  { id: 'k16', lv: 2, subj: '국어', q: '「홍길동전」의 작가는?', a: '허균', w: ['김만중', '박지원', '정철'] },
+  { id: 'k17', lv: 2, subj: '국어', q: '「구운몽」을 쓴 작가는?', a: '김만중', w: ['허균', '박지원', '김시습'] },
+  { id: 'k18', lv: 3, subj: '국어', q: '우리나라 최초의 한문 소설집으로 알려진 『금오신화』의 작가는?', a: '김시습', w: ['허균', '김만중', '박지원'] },
+  { id: 'k19', lv: 3, subj: '국어', q: '가사 「관동별곡」을 지은 사람은?', a: '정철', w: ['윤선도', '박인로', '송순'] },
+  { id: 'k20', lv: 3, subj: '국어', q: '연시조 「어부사시사」를 지은 사람은?', a: '윤선도', w: ['정철', '이황', '박인로'] },
+  { id: 'k21', lv: 3, subj: '국어', q: '최초의 근대 장편 소설로 꼽히는 「무정」의 작가는?', a: '이광수', w: ['김동인', '염상섭', '현진건'] },
+  { id: 'k22', lv: 2, subj: '국어', q: '「운수 좋은 날」의 작가는?', a: '현진건', w: ['김유정', '이효석', '채만식'] },
+  { id: 'k23', lv: 2, subj: '국어', q: '「메밀꽃 필 무렵」의 작가는?', a: '이효석', w: ['김유정', '현진건', '황순원'] },
+  { id: 'k24', lv: 1, subj: '국어', q: '「소나기」의 작가는?', a: '황순원', w: ['김유정', '이효석', '염상섭'] },
+  { id: 'k25', lv: 2, subj: '국어', q: '「동백꽃」, 「봄봄」을 쓴 작가는?', a: '김유정', w: ['이효석', '현진건', '채만식'] },
+  { id: 'k26', lv: 2, subj: '국어', q: '「광야」, 「청포도」를 쓴 저항 시인은?', a: '이육사', w: ['윤동주', '한용운', '김소월'] },
+  { id: 'k27', lv: 3, subj: '국어', q: '고려 가요가 아닌 것은?', a: '어부사시사', w: ['청산별곡', '가시리', '서경별곡'] },
+  { id: 'k28', lv: 2, subj: '국어', q: '평시조의 기본 형식은?', a: '3장 6구', w: ['4장 8구', '2장 4구', '5장 10구'] },
+  { id: 'k29', lv: 2, subj: '국어', q: '실수한 친구에게 "참 자~알 한다"라고 말하는 표현법은?', a: '반어법', w: ['역설법', '과장법', '직유법'] },
+  { id: 'k30', lv: 3, subj: '국어', q: '"찬란한 슬픔의 봄"처럼 겉으로는 모순되지만 진실을 담은 표현법은?', a: '역설법', w: ['반어법', '은유법', '대구법'] },
+  { id: 'k31', lv: 3, subj: '국어', q: '「춘향전」, 「흥부전」처럼 판소리가 소설로 정착한 작품을 무엇이라 할까?', a: '판소리계 소설', w: ['가전체 소설', '몽유록 소설', '전기 소설'] },
+  { id: 'k32', lv: 2, subj: '국어', q: '맞춤법이 바른 것은?', a: '며칠', w: ['몇일', '몇 일', '멷일'] },
   // 영어
   { id: 'e1', lv: 1, subj: '영어', q: '"procrastinate"의 뜻은?', a: '미루다', w: ['서두르다', '포기하다', '집중하다'] },
-  { id: 'e2', lv: 1, subj: '영어', q: 'go의 과거분사는?', a: 'gone', w: ['went', 'goed', 'going'] },
   { id: 'e3', lv: 1, subj: '영어', q: 'I have lived here ___ 2020.', a: 'since', w: ['for', 'during', 'while'] },
   { id: 'e4', lv: 1, subj: '영어', q: '"abundant"의 뜻은?', a: '풍부한', w: ['부족한', '위험한', '정확한'] },
-  { id: 'e5', lv: 1, subj: '영어', q: '"dormitory"의 뜻은?', a: '기숙사', w: ['교무실', '도서관', '급식실'] },
-  { id: 'e6', lv: 1, subj: '영어', q: '"rapid"와 뜻이 가장 비슷한 단어는?', a: 'fast', w: ['slow', 'quiet', 'heavy'] },
   { id: 'e7', lv: 1, subj: '영어', q: '"Break a leg!"는 공연 전에 어떤 뜻으로 쓰는 말일까?', a: '행운을 빌어!', w: ['다리 조심해!', '그만둬!', '서둘러!'] },
-  { id: 'e8', lv: 1, subj: '영어', q: 'She ___ to school every day.', a: 'goes', w: ['go', 'going', 'gone'] },
   { id: 'e9', lv: 2, subj: '영어', q: '"reluctant"의 뜻은?', a: '꺼리는', w: ['열정적인', '확실한', '친절한'] },
   { id: 'e10', lv: 2, subj: '영어', q: 'If I ___ a bird, I would fly to you.', a: 'were', w: ['am', 'be', 'is'] },
   { id: 'e11', lv: 2, subj: '영어', q: '"inevitable"의 뜻은?', a: '피할 수 없는', w: ['믿을 수 없는', '눈에 보이지 않는', '예측할 수 있는'] },
@@ -1628,15 +1706,16 @@ const QUIZ_BANK = [
   { id: 'e14', lv: 3, subj: '영어', q: '"mitigate"의 뜻은?', a: '완화하다', w: ['악화시키다', '모방하다', '이주하다'] },
   { id: 'e15', lv: 3, subj: '영어', q: 'Not only ___ late, but he also forgot his homework.', a: 'was he', w: ['he was', 'he is', 'is he'] },
   { id: 'e16', lv: 2, subj: '영어', q: '"take after"의 뜻은?', a: '~를 닮다', w: ['~를 돌보다', '~를 뒤쫓다', '~를 받아 적다'] },
+  { id: 'e17', lv: 3, subj: '영어', q: '"benevolent"의 뜻은?', a: '자비로운', w: ['악의적인', '무관심한', '성급한'] },
+  { id: 'e18', lv: 3, subj: '영어', q: '"meticulous"의 뜻은?', a: '꼼꼼한', w: ['대충 하는', '시끄러운', '소심한'] },
+  { id: 'e19', lv: 2, subj: '영어', q: '"comprehensive"의 뜻은?', a: '포괄적인', w: ['이해하기 어려운', '경쟁적인', '일시적인'] },
+  { id: 'e20', lv: 3, subj: '영어', q: 'I look forward to ___ you again.', a: 'seeing', w: ['see', 'saw', 'have seen'] },
+  { id: 'e21', lv: 2, subj: '영어', q: '"once in a blue moon"의 뜻은?', a: '아주 드물게', w: ['매일 밤', '우울할 때마다', '보름달이 뜰 때'] },
+  { id: 'e22', lv: 3, subj: '영어', q: '"feasible"의 뜻은?', a: '실현 가능한', w: ['위험한', '축제 같은', '실패한'] },
+  { id: 'e23', lv: 2, subj: '영어', q: '"a piece of cake"의 뜻은?', a: '아주 쉬운 일', w: ['작은 선물', '맛있는 간식', '나눠 먹는 것'] },
   // 한국사
-  { id: 'h1', lv: 1, subj: '한국사', q: '훈민정음을 창제한 왕은?', a: '세종', w: ['태종', '정조', '영조'] },
   { id: 'h2', lv: 1, subj: '한국사', q: '임진왜란이 일어난 해는?', a: '1592년', w: ['1392년', '1636년', '1876년'] },
   { id: 'h3', lv: 2, subj: '한국사', q: '임진왜란 때 영의정을 지낸 류성룡이 전쟁을 돌아보며 쓴 책은?', a: '징비록', w: ['난중일기', '목민심서', '열하일기'] },
-  { id: 'h4', lv: 1, subj: '한국사', q: '이순신 장군이 전쟁 중에 쓴 일기는?', a: '난중일기', w: ['징비록', '동의보감', '경국대전'] },
-  { id: 'h5', lv: 1, subj: '한국사', q: '조선을 세운 사람은?', a: '이성계', w: ['왕건', '정도전', '이방원'] },
-  { id: 'h6', lv: 1, subj: '한국사', q: '고려를 세운 사람은?', a: '왕건', w: ['궁예', '견훤', '이성계'] },
-  { id: 'h7', lv: 1, subj: '한국사', q: '3·1 운동이 일어난 해는?', a: '1919년', w: ['1910년', '1945년', '1929년'] },
-  { id: 'h8', lv: 1, subj: '한국사', q: '한글날은 몇 월 며칠일까?', a: '10월 9일', w: ['10월 3일', '8월 15일', '5월 15일'] },
   { id: 'h9', lv: 2, subj: '한국사', q: '『목민심서』를 쓴 실학자는?', a: '정약용', w: ['박지원', '이황', '김정희'] },
   { id: 'h10', lv: 2, subj: '한국사', q: '갑오개혁이 시작된 해는?', a: '1894년', w: ['1884년', '1897년', '1905년'] },
   { id: 'h11', lv: 2, subj: '한국사', q: '고종이 대한제국을 선포한 해는?', a: '1897년', w: ['1894년', '1910년', '1876년'] },
@@ -1645,100 +1724,118 @@ const QUIZ_BANK = [
   { id: 'h14', lv: 3, subj: '한국사', q: '신라에서 불교를 공인한 왕은?', a: '법흥왕', w: ['진흥왕', '지증왕', '내물왕'] },
   { id: 'h15', lv: 3, subj: '한국사', q: '강화도 조약이 체결된 해는?', a: '1876년', w: ['1866년', '1871년', '1882년'] },
   { id: 'h16', lv: 2, subj: '한국사', q: '1919년 대한민국 임시정부가 처음 세워진 곳은?', a: '상하이', w: ['충칭', '블라디보스토크', '베이징'] },
-  // 사회 (문과에서 더 자주)
+  { id: 'h17', lv: 2, subj: '한국사', q: '『동의보감』을 쓴 의관은?', a: '허준', w: ['정약용', '김정호', '장영실'] },
+  { id: 'h18', lv: 1, subj: '한국사', q: '「대동여지도」를 만든 사람은?', a: '김정호', w: ['정약용', '허준', '이익'] },
+  { id: 'h19', lv: 1, subj: '한국사', q: '세종 때 자격루와 측우기 제작에 참여한 과학자는?', a: '장영실', w: ['허준', '정약용', '김정호'] },
+  { id: 'h20', lv: 3, subj: '한국사', q: '거란과의 외교 담판으로 강동 6주를 얻어 낸 고려의 인물은?', a: '서희', w: ['강감찬', '윤관', '최영'] },
+  { id: 'h21', lv: 2, subj: '한국사', q: '귀주 대첩에서 거란군을 크게 물리친 고려의 장군은?', a: '강감찬', w: ['서희', '을지문덕', '김유신'] },
+  { id: 'h22', lv: 2, subj: '한국사', q: '살수 대첩에서 수나라 군대를 물리친 고구려의 장군은?', a: '을지문덕', w: ['연개소문', '양만춘', '강감찬'] },
+  { id: 'h23', lv: 2, subj: '한국사', q: '팔만대장경판이 보관된 절은?', a: '합천 해인사', w: ['경주 불국사', '보은 법주사', '순천 송광사'] },
+  { id: 'h24', lv: 2, subj: '한국사', q: '조선의 통치 기준이 된 기본 법전은?', a: '경국대전', w: ['속대전', '고려사', '삼국사기'] },
+  { id: 'h25', lv: 2, subj: '한국사', q: '1894년 동학 농민 운동을 이끈 지도자는?', a: '전봉준', w: ['최제우', '김옥균', '안중근'] },
+  { id: 'h26', lv: 3, subj: '한국사', q: '1884년 갑신정변을 주도한 인물은?', a: '김옥균', w: ['전봉준', '흥선 대원군', '최익현'] },
+  { id: 'h27', lv: 2, subj: '한국사', q: '1909년 하얼빈에서 이토 히로부미를 저격한 독립운동가는?', a: '안중근', w: ['윤봉길', '이봉창', '김구'] },
+  { id: 'h28', lv: 3, subj: '한국사', q: '1932년 상하이 훙커우 공원 의거를 일으킨 독립운동가는?', a: '윤봉길', w: ['안중근', '이봉창', '나석주'] },
+  { id: 'h29', lv: 2, subj: '한국사', q: '4·19 혁명이 일어난 해는?', a: '1960년', w: ['1950년', '1961년', '1980년'] },
+  { id: 'h30', lv: 3, subj: '한국사', q: '현존하는 세계에서 가장 오래된 금속 활자본은?', a: '직지심체요절', w: ['팔만대장경', '무구정광대다라니경', '훈민정음 해례본'] },
+  { id: 'h31', lv: 3, subj: '한국사', q: '당나라 세력을 몰아내고 삼국 통일을 완성한 신라의 왕은?', a: '문무왕', w: ['태종 무열왕', '진흥왕', '선덕 여왕'] },
+  // 사회·윤리
   { id: 'so1', lv: 1, subj: '사회', q: '대한민국 국회의원의 임기는?', a: '4년', w: ['5년', '6년', '3년'] },
   { id: 'so2', lv: 1, subj: '사회', q: '대한민국 대통령의 임기는?', a: '5년', w: ['4년', '6년', '7년'] },
   { id: 'so3', lv: 2, subj: '사회', q: '수요가 그대로일 때 공급이 늘어나면 가격은 일반적으로?', a: '내려간다', w: ['올라간다', '변하지 않는다', '두 배가 된다'] },
   { id: 'so4', lv: 2, subj: '사회', q: '"기회비용"의 뜻은?', a: '선택 때문에 포기한 것 중 가장 큰 가치', w: ['물건을 살 때 낸 돈', '미래에 얻을 이익', '세금으로 낸 돈'] },
-  { id: 'so5', lv: 2, subj: '사회', q: '삼권 분립에서 법을 만드는 기관은?', a: '국회', w: ['법원', '정부', '헌법재판소'] },
+  { id: 'so5', lv: 1, subj: '사회', q: '삼권 분립에서 법을 만드는 기관은?', a: '국회', w: ['법원', '정부', '헌법재판소'] },
   { id: 'so6', lv: 3, subj: '사회', q: '"보이지 않는 손"이라는 표현으로 유명한 경제학자는?', a: '애덤 스미스', w: ['케인스', '마르크스', '리카도'] },
   { id: 'so7', lv: 3, subj: '사회', q: '소크라테스의 제자로 『국가』를 쓴 철학자는?', a: '플라톤', w: ['아리스토텔레스', '칸트', '데카르트'] },
-  { id: 'so8', lv: 2, subj: '사회', q: '대한민국 선거의 4대 원칙이 아닌 것은?', a: '자유 선거', w: ['보통 선거', '평등 선거', '비밀 선거'] },
-  // 수학 (계산 문제는 아래에서 자동 생성)
-  { id: 'm1', lv: 1, subj: '수학', q: '삼각형의 세 내각의 합은?', a: '180°', w: ['90°', '270°', '360°'] },
-  { id: 'm2', lv: 1, subj: '수학', q: '소수(素數)가 아닌 것은?', a: '9', w: ['7', '11', '13'] },
-  { id: 'm3', lv: 2, subj: '수학', q: 'log₁₀ 1000 의 값은?', a: '3', w: ['10', '100', '2'] },
-  { id: 'm4', lv: 2, subj: '수학', q: 'sin 30° 의 값은?', a: '1/2', w: ['√3/2', '1', '√2/2'] },
-  { id: 'm5', lv: 1, subj: '수학', q: '2¹⁰ 의 값은?', a: '1024', w: ['512', '1000', '2048'] },
-  { id: 'm6', lv: 1, subj: '수학', q: '원의 넓이를 구하는 식은? (반지름 r)', a: 'πr²', w: ['2πr', 'πr', '2πr²'] },
-  { id: 'm7', lv: 2, subj: '수학', q: 'i² 의 값은? (i는 허수 단위)', a: '-1', w: ['1', 'i', '0'] },
-  { id: 'm8', lv: 2, subj: '수학', q: '₅C₂ 의 값은?', a: '10', w: ['20', '5', '25'] },
-  { id: 'm9', lv: 3, subj: '수학', q: 'lim(x→0) (sin x) / x 의 값은?', a: '1', w: ['0', '∞', '존재하지 않는다'] },
-  { id: 'm10', lv: 3, subj: '수학', q: '∫₀¹ 2x dx 의 값은?', a: '1', w: ['2', '1/2', '0'] },
-  { id: 'm11', lv: 3, subj: '수학', q: 'cos 60° 의 값은?', a: '1/2', w: ['√3/2', '0', '1'] },
+  { id: 'so9', lv: 1, subj: '사회', q: '물가가 계속해서 오르는 현상은?', a: '인플레이션', w: ['디플레이션', '리세션', '디폴트'] },
+  { id: 'so10', lv: 3, subj: '사회', q: '경기가 침체한 상태에서 물가까지 오르는 현상은?', a: '스태그플레이션', w: ['디플레이션', '하이퍼인플레이션', '리플레이션'] },
+  { id: 'so11', lv: 2, subj: '사회', q: '대한민국 헌법 제1조 제1항의 내용은?', a: '대한민국은 민주공화국이다', w: ['대한민국의 주권은 국민에게 있다', '모든 국민은 법 앞에 평등하다', '대한민국의 영토는 한반도와 그 부속 도서로 한다'] },
+  { id: 'so12', lv: 2, subj: '사회', q: '프랑스 혁명이 시작된 해는?', a: '1789년', w: ['1688년', '1776년', '1848년'] },
+  { id: 'so13', lv: 2, subj: '사회', q: '미국 독립 선언이 발표된 해는?', a: '1776년', w: ['1789년', '1620년', '1812년'] },
+  { id: 'so14', lv: 3, subj: '사회', q: '『사회 계약론』을 쓴 사상가는?', a: '루소', w: ['홉스', '로크', '몽테스키외'] },
+  { id: 'so15', lv: 3, subj: '사회', q: '『법의 정신』에서 삼권 분립을 주장한 사상가는?', a: '몽테스키외', w: ['루소', '로크', '홉스'] },
+  { id: 'so16', lv: 2, subj: '사회', q: '경도 0°인 본초 자오선이 지나는 곳은?', a: '영국 그리니치', w: ['프랑스 파리', '이탈리아 로마', '미국 뉴욕'] },
+  { id: 'so17', lv: 2, subj: '사회', q: '"GDP"는 무엇의 약자일까?', a: '국내 총생산', w: ['국민 총소득', '국내 총지출', '무역 수지'] },
+  { id: 'so18', lv: 2, subj: '사회', q: '국제 연합(UN) 본부가 있는 도시는?', a: '뉴욕', w: ['제네바', '파리', '런던'] },
+  { id: 'so19', lv: 3, subj: '사회', q: '"너 자신을 알라"는 말을 자주 인용하며 문답법으로 가르친 철학자는?', a: '소크라테스', w: ['플라톤', '아리스토텔레스', '피타고라스'] },
+  // 수학 (계산 없이 수학 상식)
+  { id: 'm1', lv: 1, subj: '수학', q: '피타고라스 정리가 성립하는 도형은?', a: '직각삼각형', w: ['정삼각형', '원', '평행사변형'] },
+  { id: 'm2', lv: 2, subj: '수학', q: '원주율 π는 어떤 수일까?', a: '무리수', w: ['유리수', '정수', '자연수'] },
+  { id: 'm3', lv: 2, subj: '수학', q: '소수(素數)는 모두 몇 개일까?', a: '무한히 많다', w: ['100개', '1,000개', '아직 모른다'] },
+  { id: 'm4', lv: 2, subj: '수학', q: '1, 1, 2, 3, 5, 8, …처럼 앞의 두 수를 더해 가는 수열은?', a: '피보나치 수열', w: ['등차수열', '등비수열', '조화수열'] },
+  { id: 'm5', lv: 3, subj: '수학', q: '좌표평면을 고안해 해석 기하학의 길을 연 철학자이자 수학자는?', a: '데카르트', w: ['뉴턴', '파스칼', '유클리드'] },
+  { id: 'm6', lv: 3, subj: '수학', q: '350여 년 만에 "페르마의 마지막 정리"를 증명한 수학자는?', a: '앤드루 와일스', w: ['페렐만', '오일러', '가우스'] },
+  { id: 'm7', lv: 3, subj: '수학', q: '뉴턴과 따로 미적분을 발견해 오늘날의 기호(∫, dx)를 만든 학자는?', a: '라이프니츠', w: ['데카르트', '오일러', '파스칼'] },
+  { id: 'm8', lv: 3, subj: '수학', q: '황금비에 가장 가까운 값은?', a: '약 1.618', w: ['약 3.141', '약 2.718', '약 1.414'] },
+  { id: 'm9', lv: 3, subj: '수학', q: '"2보다 큰 모든 짝수는 두 소수의 합"이라는, 아직 증명되지 않은 추측은?', a: '골드바흐의 추측', w: ['리만 가설', '페르마의 마지막 정리', '4색 정리'] },
+  { id: 'm10', lv: 3, subj: '수학', q: '『팡세』를 쓰고 확률론의 기초를 닦은 프랑스 학자는?', a: '파스칼', w: ['데카르트', '뉴턴', '오일러'] },
+  { id: 'm11', lv: 2, subj: '수학', q: '『기하학 원론』을 써서 "기하학의 아버지"라 불리는 수학자는?', a: '유클리드', w: ['피타고라스', '아르키메데스', '탈레스'] },
+  { id: 'm12', lv: 3, subj: '수학', q: '목욕탕에서 "유레카!"를 외쳤다는 일화로 유명한 학자는?', a: '아르키메데스', w: ['피타고라스', '유클리드', '탈레스'] },
   // 과학
-  { id: 's1', lv: 1, subj: '과학', q: '물의 화학식은?', a: 'H₂O', w: ['CO₂', 'O₂', 'H₂O₂'] },
   { id: 's2', lv: 1, subj: '과학', q: '태양계에서 가장 큰 행성은?', a: '목성', w: ['토성', '지구', '해왕성'] },
-  { id: 's3', lv: 1, subj: '과학', q: '주기율표의 1번 원소는?', a: '수소', w: ['헬륨', '산소', '탄소'] },
-  { id: 's4', lv: 1, subj: '과학', q: '식물이 광합성을 하면서 내보내는 기체는?', a: '산소', w: ['이산화탄소', '질소', '수소'] },
   { id: 's5', lv: 1, subj: '과학', q: '소리가 전달되지 않는 곳은?', a: '진공', w: ['물속', '쇠막대', '공기 중'] },
-  { id: 's6', lv: 1, subj: '과학', q: 'F = ma 는 누구의 운동 법칙일까?', a: '뉴턴', w: ['아인슈타인', '갈릴레이', '케플러'] },
   { id: 's7', lv: 2, subj: '과학', q: '진공에서 빛의 속력에 가장 가까운 값은?', a: '약 30만 km/s', w: ['약 340 m/s', '약 3만 km/s', '약 300만 km/s'] },
   { id: 's8', lv: 2, subj: '과학', q: '1953년 DNA 이중 나선 구조를 발표한 과학자는?', a: '왓슨과 크릭', w: ['멘델', '다윈', '파스퇴르'] },
   { id: 's9', lv: 2, subj: '과학', q: '원자 번호 6번 원소는?', a: '탄소', w: ['질소', '산소', '붕소'] },
-  { id: 's10', lv: 2, subj: '과학', q: '운동 에너지를 구하는 식은?', a: '½mv²', w: ['mgh', 'mv', 'ma'] },
   { id: 's11', lv: 3, subj: '과학', q: '세포 호흡으로 ATP를 주로 만드는 세포 소기관은?', a: '미토콘드리아', w: ['리보솜', '골지체', '액포'] },
   { id: 's12', lv: 2, subj: '과학', q: '산성 용액의 pH는?', a: '7보다 작다', w: ['7보다 크다', '정확히 7이다', '항상 0이다'] },
-  { id: 's13', lv: 3, subj: '과학', q: '멘델이 유전 법칙을 밝힐 때 실험한 식물은?', a: '완두', w: ['옥수수', '강낭콩', '벼'] },
-  { id: 's14', lv: 3, subj: '과학', q: '빛이 물에서 공기로 나올 때 꺾이는 현상은?', a: '굴절', w: ['반사', '회절', '간섭'] },
+  { id: 's13', lv: 2, subj: '과학', q: '멘델이 유전 법칙을 밝힐 때 실험한 식물은?', a: '완두', w: ['옥수수', '강낭콩', '벼'] },
+  { id: 's14', lv: 2, subj: '과학', q: '빛이 물에서 공기로 나올 때 꺾이는 현상은?', a: '굴절', w: ['반사', '회절', '간섭'] },
   { id: 's15', lv: 2, subj: '과학', q: '지구 대기에서 가장 많은 기체는?', a: '질소', w: ['산소', '이산화탄소', '아르곤'] },
-  // 안동·풍산 & 상식
+  { id: 's16', lv: 2, subj: '과학', q: '태양이 우주의 중심이 아니라 지구가 태양을 돈다는 지동설을 체계적으로 주장한 천문학자는?', a: '코페르니쿠스', w: ['프톨레마이오스', '아리스토텔레스', '뉴턴'] },
+  { id: 's17', lv: 2, subj: '과학', q: '푸른곰팡이에서 페니실린을 발견한 과학자는?', a: '플레밍', w: ['파스퇴르', '코흐', '제너'] },
+  { id: 's18', lv: 2, subj: '과학', q: '원소를 원자량 순으로 배열해 주기율표를 처음 만든 과학자는?', a: '멘델레예프', w: ['돌턴', '라부아지에', '보어'] },
+  { id: 's19', lv: 3, subj: '과학', q: '"질량 보존 법칙"을 밝힌 과학자는?', a: '라부아지에', w: ['돌턴', '보일', '아보가드로'] },
+  { id: 's20', lv: 1, subj: '과학', q: '식물 세포에서 광합성이 일어나는 곳은?', a: '엽록체', w: ['미토콘드리아', '핵', '세포벽'] },
+  { id: 's21', lv: 2, subj: '과학', q: '지구에서 가장 가까운 항성(별)은?', a: '태양', w: ['북극성', '시리우스', '프록시마 센타우리'] },
+  { id: 's22', lv: 3, subj: '과학', q: 'ABO식 혈액형을 발견한 과학자는?', a: '란트슈타이너', w: ['멘델', '파스퇴르', '하비'] },
+  { id: 's23', lv: 3, subj: '과학', q: '피가 심장에서 나와 온몸을 돌아 다시 돌아온다는 혈액 순환을 밝힌 의사는?', a: '윌리엄 하비', w: ['히포크라테스', '갈레노스', '베살리우스'] },
+  { id: 's24', lv: 2, subj: '과학', q: '빛의 삼원색은?', a: '빨강·초록·파랑', w: ['빨강·노랑·파랑', '빨강·초록·노랑', '노랑·자홍·청록'] },
+  { id: 's25', lv: 2, subj: '과학', q: '공기 중에서 소리의 속력에 가장 가까운 값은?', a: '약 340 m/s', w: ['약 30만 km/s', '약 1,500 m/s', '약 34 m/s'] },
+  { id: 's26', lv: 3, subj: '과학', q: 'DNA를 이루는 염기가 아닌 것은?', a: '우라실', w: ['아데닌', '구아닌', '사이토신'] },
+  { id: 's27', lv: 1, subj: '과학', q: '『종의 기원』을 써서 자연 선택에 의한 진화론을 주장한 과학자는?', a: '다윈', w: ['라마르크', '멘델', '뉴턴'] },
+  { id: 's28', lv: 3, subj: '과학', q: '대륙이 원래 하나(판게아)였다는 대륙 이동설을 주장한 과학자는?', a: '베게너', w: ['허턴', '라이엘', '케플러'] },
+  // 안동·풍산
   { id: 'a1', lv: 1, subj: '안동 상식', q: '하회마을을 휘감아 흐르는 강은?', a: '낙동강', w: ['한강', '금강', '섬진강'] },
   { id: 'a2', lv: 1, subj: '안동 상식', q: '병산서원에 모셔진, 임진왜란 때의 재상은?', a: '류성룡', w: ['이황', '이순신', '정약용'] },
   { id: 'a3', lv: 1, subj: '안동 상식', q: '도산서원과 가장 관련이 깊은 유학자는?', a: '퇴계 이황', w: ['율곡 이이', '다산 정약용', '우암 송시열'] },
   { id: 'a4', lv: 2, subj: '안동 상식', q: '하회마을이 양동마을과 함께 유네스코 세계유산에 오른 해는?', a: '2010년', w: ['2000년', '2015년', '1995년'] },
   { id: 'a5', lv: 2, subj: '안동 상식', q: '1999년 하회마을을 방문한 영국 여왕은?', a: '엘리자베스 2세', w: ['빅토리아 여왕', '메리 2세', '앤 여왕'] },
-  { id: 'a6', lv: 1, subj: '안동 상식', q: '안동이 속한 광역자치단체는?', a: '경상북도', w: ['경상남도', '충청북도', '강원특별자치도'] },
   { id: 'a7', lv: 1, subj: '안동 상식', q: '하회별신굿탈놀이에 쓰이는 탈은?', a: '하회탈', w: ['봉산탈', '북청사자탈', '처용탈'] },
   { id: 'a8', lv: 3, subj: '안동 상식', q: '병산서원과 도산서원이 포함된 "한국의 서원"이 유네스코 세계유산에 오른 해는?', a: '2019년', w: ['2010년', '2014년', '2021년'] },
   { id: 'a9', lv: 1, subj: '안동 상식', q: '문경새재 과거길은 옛날 선비들이 어디로 과거를 보러 가던 길일까?', a: '한양', w: ['경주', '평양', '개성'] },
   { id: 'a10', lv: 2, subj: '안동 상식', q: '『징비록』을 쓴 류성룡의 호는?', a: '서애', w: ['퇴계', '율곡', '다산'] },
   { id: 'a11', lv: 3, subj: '안동 상식', q: '퇴계 이황이 제자들을 가르치려고 지은, 도산서원 안의 건물은?', a: '도산서당', w: ['만대루', '양진당', '충효당'] },
   { id: 'a12', lv: 2, subj: '안동 상식', q: '병산서원의 누각으로, 앉으면 낙동강과 병산이 한눈에 들어오는 곳은?', a: '만대루', w: ['광한루', '촉석루', '영남루'] },
+  { id: 'a13', lv: 3, subj: '안동 상식', q: '하회마을이 속한 안동의 면은?', a: '풍천면', w: ['풍산읍', '도산면', '임하면'] },
+  { id: 'a14', lv: 1, subj: '안동 상식', q: '안동을 대표하는 전통 증류주는?', a: '안동소주', w: ['문배주', '한산 소곡주', '이강주'] },
+  { id: 'a15', lv: 3, subj: '안동 상식', q: '하회탈과 함께 국보로 지정된 탈은?', a: '병산탈', w: ['봉산탈', '양주별산대탈', '북청사자탈'] },
+  { id: 'a16', lv: 2, subj: '안동 상식', q: '2016년 경상북도청이 대구에서 옮겨 간 도시는?', a: '안동', w: ['포항', '구미', '경주'] },
+  // 일반 상식·예술
   { id: 'g1', lv: 1, subj: '상식', q: '1년 중 낮이 가장 긴 절기는?', a: '하지', w: ['동지', '춘분', '추분'] },
-  { id: 'g2', lv: 1, subj: '상식', q: '올림픽 오륜기의 고리는 몇 개일까?', a: '5개', w: ['4개', '6개', '7개'] },
-  { id: 'g3', lv: 1, subj: '상식', q: '대학수학능력시험(수능)은 보통 몇 월에 치를까?', a: '11월', w: ['9월', '10월', '12월'] },
+  { id: 'g4', lv: 2, subj: '상식', q: '노벨상을 만든 알프레드 노벨이 발명한 것은?', a: '다이너마이트', w: ['전구', '전화기', '증기 기관'] },
+  { id: 'g5', lv: 2, subj: '상식', q: '「별이 빛나는 밤」을 그린 화가는?', a: '빈센트 반 고흐', w: ['클로드 모네', '파블로 피카소', '폴 세잔'] },
+  { id: 'g6', lv: 2, subj: '상식', q: '「운명」이라는 별명이 붙은 교향곡 5번의 작곡가는?', a: '베토벤', w: ['모차르트', '바흐', '슈베르트'] },
+  { id: 'g7', lv: 2, subj: '상식', q: '올림픽 오륜기의 다섯 고리가 상징하는 것은?', a: '다섯 대륙', w: ['다섯 가지 덕목', '다섯 창립 국가', '다섯 기본 종목'] },
+  { id: 'g8', lv: 2, subj: '상식', q: '셰익스피어의 4대 비극이 아닌 것은?', a: '로미오와 줄리엣', w: ['햄릿', '맥베스', '리어왕'] },
+  { id: 'g9', lv: 2, subj: '상식', q: '『어린 왕자』를 쓴 작가는?', a: '생텍쥐페리', w: ['헤밍웨이', '카뮈', '톨스토이'] },
+  { id: 'g10', lv: 2, subj: '상식', q: '『노인과 바다』를 쓴 작가는?', a: '헤밍웨이', w: ['스타인벡', '마크 트웨인', '피츠제럴드'] },
+  { id: 'g11', lv: 3, subj: '상식', q: '「천지창조」 천장화가 그려진 바티칸의 예배당은?', a: '시스티나 성당', w: ['노트르담 대성당', '성 베드로 대성당', '사그라다 파밀리아'] },
+  { id: 'g12', lv: 3, subj: '상식', q: '「최후의 만찬」을 그린 화가는?', a: '레오나르도 다빈치', w: ['미켈란젤로', '라파엘로', '렘브란트'] },
 ];
 
 const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const shuffle = arr => { const r = arr.slice(); for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
 
-// 숫자 오답 3개 만들기 (정답 근처의 서로 다른 값)
-function nearWrongs(ans, spread) {
-  const set = new Set();
-  while (set.size < 3) { const d = randInt(-spread, spread); if (d !== 0 && ans + d >= 0) set.add(ans + d); }
-  return [...set].map(String);
-}
-
-// 학년이 올라갈수록 어려운 계산 문제 (1학년: 중3~고1 / 2학년: 수열·로그·조합 / 3학년: 미분·적분·등비수열)
-function makeMathQuestion(grade) {
-  const pools = { 1: [0, 1, 2, 3], 2: [2, 3, 4, 5, 6, 7], 3: [4, 5, 6, 7, 8, 9, 10] };
-  const type = pools[grade][randInt(0, pools[grade].length - 1)];
-  const M = (q, a, w) => ({ subj: '수학', q: q, a: String(a), w: w });
-  switch (type) {
-    case 0: { const a = randInt(13, 39), b = randInt(12, 29); return M(`${a} × ${b} = ?`, a * b, nearWrongs(a * b, 30)); }
-    case 1: { const p = [15, 25, 35, 45, 75][randInt(0, 4)], n = [40, 60, 80, 120, 160, 240][randInt(0, 5)]; const ans = n * p / 100; return M(`${n}의 ${p}%는?`, ans, nearWrongs(ans, 12)); }
-    case 2: { const x = randInt(-9, 12), a = randInt(2, 9), b = randInt(5, 30); return M(`${a}x + ${b} = ${a * x + b} 일 때, x = ?`, x, nearWrongs(x + 20, 4).map(v => String(Number(v) - 20))); }
-    case 3: { const n = randInt(13, 29); return M(`${n}² = ?`, n * n, nearWrongs(n * n, 40)); }
-    case 4: { const r1 = randInt(1, 9), r2 = randInt(1, 9); return M(`x² − ${r1 + r2}x + ${r1 * r2} = 0 의 두 근의 곱은?`, r1 * r2, nearWrongs(r1 * r2, 6)); }
-    case 5: { const a1 = randInt(-5, 9), d = randInt(2, 7), n = randInt(8, 20); const ans = a1 + (n - 1) * d; return M(`첫째항 ${a1}, 공차 ${d}인 등차수열의 제${n}항은?`, ans, nearWrongs(ans + 50, d).map(v => String(Number(v) - 50))); }
-    case 6: { const b = [2, 3][randInt(0, 1)], e = b === 2 ? randInt(5, 10) : randInt(3, 6); return M(`log${b === 2 ? '₂' : '₃'} ${b ** e} 의 값은?`, e, nearWrongs(e, 3)); }
-    case 7: { const n = randInt(5, 9), r = randInt(2, 3); let c = 1; for (let i = 0; i < r; i++) c = c * (n - i) / (i + 1); return M(`${n}C${r} 의 값은?`, c, nearWrongs(c, 10)); }
-    case 8: { const a = randInt(2, 5), b = randInt(1, 9), c = randInt(1, 4); const ans = 2 * a * c + b; return M(`f(x) = ${a}x² + ${b}x 일 때, f′(${c})의 값은?`, ans, nearWrongs(ans, 6)); }
-    case 9: { const n = randInt(2, 6); return M(`∫₀^${n} 2x dx 의 값은?`, n * n, nearWrongs(n * n, 5)); }
-    default: { const n = randInt(4, 8); const ans = 2 ** n - 1; return M(`1 + 2 + 4 + … + 2^${n - 1} (등비수열 ${n}개 항의 합)은?`, ans, nearWrongs(ans, 8)); }
-  }
-}
-
 // 난이도 비중: 학년이 오를수록 어려운 문제 비중이 커진다. 수능 직전은 최고 난도.
-const LEVEL_WEIGHT = { 1: { 1: 3, 2: 2, 3: 0.5 }, 2: { 1: 1, 2: 3, 3: 1.5 }, 3: { 1: 0.3, 2: 2, 3: 3 }, final: { 1: 0, 2: 1, 3: 3 } };
+const LEVEL_WEIGHT = { 1: { 1: 2, 2: 3, 3: 1 }, 2: { 1: 0.5, 2: 3, 3: 2 }, 3: { 1: 0, 2: 2, 3: 3 }, final: { 1: 0, 2: 1, 3: 3 } };
 // 문과·이과 과목 비중
 const TRACK_WEIGHT = {
-  lib: { '국어': 2, '영어': 2, '한국사': 2, '사회': 2.5, '수학': 0.6, '과학': 0.5 },
-  sci: { '수학': 2.5, '과학': 2.5, '국어': 0.8, '영어': 1, '한국사': 0.6, '사회': 0.3 },
+  lib: { '국어': 2, '영어': 2, '한국사': 2, '사회': 2.5, '수학': 0.5, '과학': 0.5 },
+  sci: { '수학': 2.5, '과학': 2.5, '국어': 0.8, '영어': 1, '한국사': 0.6, '사회': 0.4 },
 };
 
-// 이번 퀴즈 문제 뽑기 (한 판 안에서는 같은 고정 문제가 다시 안 나온다)
+// 이번 퀴즈 문제 뽑기 (한 판 안에서는 같은 문제가 다시 안 나온다)
 function makeQuiz(s, count, final) {
   if (!s.quizSeen) s.quizSeen = [];
   const lw = final ? LEVEL_WEIGHT.final : LEVEL_WEIGHT[gradeOf(s.turn)];
@@ -1746,19 +1843,14 @@ function makeQuiz(s, count, final) {
   const weightOf = q => (lw[q.lv] || 0) * (tw[q.subj] || 1);
   let pool = QUIZ_BANK.filter(q => !s.quizSeen.includes(q.id) && weightOf(q) > 0);
   if (pool.length < count) { s.quizSeen = []; pool = QUIZ_BANK.filter(q => weightOf(q) > 0); }
-  // 계산 문제 수: 이과는 많이, 문과는 적게
-  const mathChance = s.track === 'sci' ? 0.8 : (s.track === 'lib' ? 0.25 : 0.5);
-  let mathCount = roll(mathChance) ? 1 : 0;
-  if (final && s.track === 'sci') mathCount = 2;
   const qs = [];
-  while (qs.length < count - mathCount && pool.length) {
+  while (qs.length < count && pool.length) {
     const idx = pickWeightedIndex(pool.map(weightOf));
     const q = pool.splice(idx, 1)[0];
     s.quizSeen.push(q.id);
     qs.push(q);
   }
-  while (qs.length < count) qs.push(makeMathQuestion(final ? 3 : gradeOf(s.turn)));
-  return shuffle(qs).map(q => ({ subj: q.subj, lv: q.lv || (final ? 3 : gradeOf(s.turn)), q: q.q, a: q.a, options: shuffle([q.a, ...q.w]) }));
+  return qs.map(q => ({ subj: q.subj, lv: q.lv, q: q.q, a: q.a, options: shuffle([q.a, ...q.w]) }));
 }
 
 // 퀴즈를 시작할 수 있는지 (시험·수능 화면에서 한 번만)
@@ -1818,16 +1910,46 @@ function earnedAchievements(s) { return ACHIEVEMENTS.filter(a => { try { return 
 
 // ---------- 13. 턴 종료: 자연 감소 + 스트레스 + 전학 판정 ----------
 function endTurn(s) {
+  const has = id => s.contra.includes(id);
   const decay = {};
   for (const key of STATS) {
     let d = CONFIG.DECAY[key];
     if (s.stats[key] >= CONFIG.HIGH_LINE) d += CONFIG.HIGH_EXTRA_DECAY;
     if (key === 'fame' && s.president) d -= 2;   // 학생회장은 명성이 잘 안 떨어진다
-    decay[key] = changeStat(s, key, -d);
+    if (key === 'hp' && has('kettle')) d -= 3;    // 전기포트: 야식 라면
+    if (key === 'int' && has('lamp')) d -= 3;     // 독서등: 소등 후 공부
+    if (key === 'soc' && has('phone2')) d -= 3;   // 공기계: 단톡방
+    decay[key] = changeStat(s, key, -Math.max(0, d));
   }
+  // 금지물품 보너스
+  const contraFx = {};
+  if (has('mat')) contraFx.hp = 3;
+  if (has('console')) contraFx.int = -1;
+  let contraStress = 0;
+  if (has('mat') && periodOf(s.turn) === 5) contraStress -= 3;
+  if (has('phone2')) contraStress -= 2;
+  if (has('console')) contraStress -= 5;
+  const contraReal = applyChanges(s, contraFx);
   // 기숙사 생활 스트레스 (3학년은 더 쌓인다)
   const roomFx = s.aff >= 70 ? -3 : (s.aff <= 25 ? 4 : 0);   // 룸메와 사이가 좋으면 덜 쌓이고, 나쁘면 더 쌓인다
-  decay.stress = changeStat(s, 'stress', CONFIG.STRESS_PER_TURN + (gradeOf(s.turn) === 3 ? 3 : 0) + roomFx);
+  decay.stress = changeStat(s, 'stress', CONFIG.STRESS_PER_TURN + (gradeOf(s.turn) === 3 ? 3 : 0) + roomFx + contraStress);
+
+  // 룸메 반응
+  let roomAff = 0;
+  if (s.roommate === 'yejun' && s.contra.length) roomAff -= 3;
+  if (s.roommate === 'yumin' && has('kettle')) roomAff += 3;
+  if (roomAff) changeStat(s, 'aff', roomAff);
+
+  // 불시 방 검사: 물건마다 따로 걸릴 수 있다 (재원이는 사감 선생님 발소리를 먼저 듣는다)
+  const inspectP = CONFIG.CONTRA_INSPECT - (s.roommate === 'jaewon' && s.aff >= 50 ? 0.05 : 0);
+  const caught = s.contra.filter(() => roll(inspectP));
+  if (caught.length) {
+    s.contra = s.contra.filter(id => !caught.includes(id));
+    changeStat(s, 'penalty', CONFIG.CONTRA_PENALTY * caught.length);
+    changeStat(s, 'stress', 5);
+    addLog(s, '🔦', `불시 방 검사: ${caught.map(id => contraOf(id).name).join(', ')} 압수, 벌점 +${CONFIG.CONTRA_PENALTY * caught.length}`);
+  }
+  const warnedBefore = s.penaltyWarned;
 
   let burnout = null;
   if (s.stress >= CONFIG.STRESS_MAX) {
@@ -1852,7 +1974,10 @@ function endTurn(s) {
   for (const key of STATS) total[key] = s.stats[key] - s.turnStartStats[key];
   total.stress = s.stress - s.turnStartStress;
   total.penalty = s.penalty - s.turnStartPenalty;
-  s.summary = { turn: s.turn, decay: decay, total: total, warnings: warnings, burnout: burnout, moneyNow: s.money, roomFx: roomFx };
+  s.summary = { turn: s.turn, decay: decay, total: total, warnings: warnings, burnout: burnout, moneyNow: s.money, roomFx: roomFx,
+    contraFx: contraReal, contraStress: contraStress, roomAff: roomAff, caught: caught };
+  if (checkPenalty(s)) return;
+  if (!warnedBefore && s.penaltyWarned) s.summary.warnText = `📞 벌점 ${s.penalty}점! 부모님이 학교에 호출됐다. ${CONFIG.PENALTY_OUT}점이 되면 퇴사다.`;
 
   if (transferKey) {
     s.ending = { type: 'transfer', stat: transferKey, reason: `${STAT_NAME[transferKey]} ${CONFIG.DANGER_LINE} 미만 ${CONFIG.STREAK_TO_TRANSFER}턴 연속 → 기숙사 적응 실패로 전학` };
@@ -1935,8 +2060,8 @@ if (typeof module !== 'undefined') {
   module.exports = {
     CONFIG, STATS, STAT_NAME, ROULETTE, ITEMS, SPECIAL_EVENTS, VACATION_OPTIONS, RANDOM_EVENTS,
     formatWon, newGame, startTurn, spinRoulette, chooseHome, BIWEEKLY_OPTIONS, goShop, buyItem, cannotBuyReason, leaveShop,
-    getCalendarEvent, chooseCalendar, afterCalendarResult, examsForTurn, currentExam,
-    QUIZ, QUIZ_BANK, makeQuiz, makeMathQuestion, startQuiz, finishQuiz, canQuiz, ACHIEVEMENTS, earnedAchievements, ROOMMATES,
+    getCalendarEvent, chooseCalendar, afterCalendarResult, examsForTurn, currentExam, packItem, leavePack, CONTRABAND,
+    QUIZ, QUIZ_BANK, makeQuiz, startQuiz, finishQuiz, canQuiz, ACHIEVEMENTS, earnedAchievements, ROOMMATES,
     getSpecialOptions, doSpecial, afterEventResult, getPendingRandom, canChoose, chooseRandom,
     afterRandomResult, takeExam, afterExamResult, nextTurn, takeFinalExam,
     gradeOdds, suneungOdds, isVacation, isExamTurn, maxStatKey, minStatKey, examPower,
@@ -1952,13 +2077,13 @@ if (typeof module !== 'undefined') {
 //  - 흐름: 버튼 클릭 → handleAction() → 규칙 함수 호출 → render()
 // =====================================================================
 
-const SAVE_KEY = 'pungsan-graduation-save-v4';
+const SAVE_KEY = 'pungsan-graduation-save-v5';
 const ACHV_KEY = 'pungsan-achievements-v1';
 
 // ---------- 자동 업데이트 ----------
 // 새 버전을 올릴 때: 아래 APP_VERSION 과 version.json 의 "version" 을 같은 값으로 바꾼다.
 // 그러면 접속 중인 사람은 1분 안에 알림을 받고, 지금 판이 끝나면 새 버전으로 바뀐다.
-const APP_VERSION = '2026.11.24-7';
+const APP_VERSION = '2026.11.24-8';
 const VERSION_CHECK_MS = 60 * 1000;
 let remoteVersion = null;     // 서버에 올라온 최신 버전
 let newVersionReady = false;  // 새 버전이 기다리는 중인지
@@ -2025,7 +2150,7 @@ function loadGame() {
     const text = localStorage.getItem(SAVE_KEY);
     if (!text) return null;
     const data = JSON.parse(text);
-    return data && data.version === 4 ? data : null;
+    return data && data.version === 5 ? data : null;
   } catch (e) { return null; }
 }
 
@@ -2081,7 +2206,7 @@ function expHint(exp) {
   return parts.join(' · ');
 }
 
-const PHASE_STEP = { roulette: 0, shop: 1, calendar: 2, calendarResult: 2, event: 3, eventResult: 3, random: 4, randomResult: 4, exam: 5, examResult: 5, summary: 6 };
+const PHASE_STEP = { roulette: 0, pack: 0, shop: 1, calendar: 2, calendarResult: 2, event: 3, eventResult: 3, random: 4, randomResult: 4, exam: 5, examResult: 5, summary: 6 };
 function stepsHTML() {
   const names = ['🏠 귀가', '🛒 매점', '📅 학사일정', '⭐ 활동', '🎲 사건', '📝 시험', '🌙 정리'];
   const now = PHASE_STEP[s.phase];
@@ -2145,6 +2270,7 @@ function playerHTML() {
         <div class="stats">${statsHTML}</div>
         <div class="gauges">${gauges}</div>
         ${roommateHTML()}
+        ${s.contra.length ? `<div class="inv">${s.contra.map(id => `<span class="pill red" title="${esc(contraOf(id).desc)}">🤫 ${contraOf(id).emoji} ${contraOf(id).name}</span>`).join('')}</div>` : ''}
         ${Object.keys(s.inv || {}).some(k => s.inv[k] > 0) ? `<div class="inv">${Object.keys(s.inv).filter(k => s.inv[k] > 0).map(k => `<span class="pill yellow">${INV_NAME[k]} ×${s.inv[k]}</span>`).join('')}</div>` : ''}
         <div class="timeline">${dots}</div>
         <div class="legend">📋 내신 · 📝 모의고사 · 🏖 방학 · 🎓 수능 · 빨간 선 = 위험선</div>
@@ -2247,6 +2373,7 @@ function welcomeHTML() {
         · 🚨 <b>벌점</b>: 무단외출·야식·폰·점호 지각… ${CONFIG.PENALTY_WARN}점이면 부모님 호출, ${CONFIG.PENALTY_OUT}점이면 강제 퇴사<br>
         · 📅 매 턴 실제 풍산고 학사일정 이벤트가 열린다 (전통문화체험, 문경새재, 학생회장 선거, 봉황축제…)<br>
         · 🏠 한 달마다 귀가는 필수, 사이사이 격주 주말엔 귀가할지 잔류할지 고른다<br>
+        · 🎒 복귀할 때 전기포트·전기매트 같은 반입 금지물품을 몰래 챙길 수 있다. 걸리면 압수 + 벌점<br>
         · 📝 모의고사(9등급)와 📋 중간·기말(내신 5등급)이 실제 일정대로. 시험마다 전교 1등 라이벌 <b>${RIVAL_NAME}</b>과 등급 대결<br>
         · 3학년 마지막엔 수능. 모든 능력치 ${CONFIG.DANGER_LINE} 이상이어야 졸업
       </div>
@@ -2306,6 +2433,27 @@ function itemPillsHTML(it) {
     const good = BAD_KEYS.includes(k) ? it.fx[k] < 0 : it.fx[k] > 0;
     return `<span class="pill ${good ? 'green' : 'red'}">${STAT_EMOJI[k]} ${STAT_NAME[k]} ${sign(it.fx[k])}</span>`;
   }).join('');
+}
+
+function packHTML() {
+  const r = s.packResult;
+  const cards = CONTRABAND.map(c => {
+    const own = s.contra.includes(c.id);
+    return `<button class="choice risky" data-action="pack" data-id="${c.id}" ${own || r ? 'disabled' : ''}>
+      <span class="emo">${c.emoji}</span><span class="name">${c.name}</span>
+      <span class="desc">${c.desc}</span>
+      <span class="pills">${own ? '<span class="pill green">이미 보관 중</span>' : `<span class="pill red">🚨 짐 검사 ${pct(CONFIG.CONTRA_ENTRY_CATCH)}</span>`}</span>
+    </button>`;
+  }).join('');
+  return `
+    <div class="card stage fade-in">
+      ${stepsHTML()}
+      <h2>🎒 기숙사 복귀 전, 짐 싸기</h2>
+      <p class="lead">집에 있는 반입 금지물품을 하나 몰래 챙겨 갈 수 있다. 갖고 있으면 매 턴 효과가 있지만, 복귀할 때 짐 검사(${pct(CONFIG.CONTRA_ENTRY_CATCH)})나 불시 방 검사(물건마다 매 턴 ${pct(CONFIG.CONTRA_INSPECT)})에 걸리면 압수에 벌점 +${CONFIG.CONTRA_PENALTY}.</p>
+      ${r ? `<div class="result-box ${r.ok ? 'good' : 'bad'}" style="margin-bottom:12px"><div class="result-emoji">${r.ok ? '🤫' : '🚫'}</div><p class="result-text">${r.text}</p>${r.ok ? '' : `<div class="chips">${chipsHTML(r.changes)}</div>`}</div>` : ''}
+      <div class="choices">${cards}</div>
+      <div class="btn-row"><button class="btn yellow" data-action="leavePack">${r ? '매점으로 →' : '그냥 간다 (매점으로) →'}</button></div>
+    </div>`;
 }
 
 function shopHTML() {
@@ -2585,8 +2733,12 @@ function summaryHTML() {
   rows += `<tr><td>😵 스트레스</td><td class="${st > 0 ? 'minus' : (st < 0 ? 'plus' : '')}">${sign(st)}</td><td class="minus">${sign(sum.decay.stress)}</td><td><b>${s.stress}</b></td></tr>`;
   if (s.penalty || sum.total.penalty) rows += `<tr><td>🚨 벌점</td><td class="${sum.total.penalty > 0 ? 'minus' : (sum.total.penalty < 0 ? 'plus' : '')}">${sign(sum.total.penalty)}</td><td>-</td><td><b>${s.penalty}</b></td></tr>`;
   let alerts = '';
-  if (sum.roomFx < 0) alerts += `<div class="info">🤝 룸메 ${roommateOf(s).name}와 사이가 좋아서 스트레스가 덜 쌓였다 (${sum.roomFx})</div>`;
-  if (sum.roomFx > 0) alerts += `<div class="alert">🥶 룸메 ${roommateOf(s).name}와 냉전 중이라 방에 있는 게 괴롭다 (스트레스 +${sum.roomFx})</div>`;
+  if (sum.warnText) alerts += `<div class="alert">${sum.warnText}</div>`;
+  if (sum.caught && sum.caught.length) alerts += `<div class="alert">🔦 불시 방 검사! ${sum.caught.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ')} 압수, 벌점 +${CONFIG.CONTRA_PENALTY * sum.caught.length}</div>`;
+  if (s.contra.length || (sum.contraFx && Object.keys(sum.contraFx).length) || sum.contraStress) alerts += `<div class="info">🎒 몰래 보관 중: ${s.contra.length ? s.contra.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ') : '없음'}${sum.contraStress ? ` · 스트레스 ${sum.contraStress}` : ''}${sum.contraFx && sum.contraFx.hp ? ` · 체력 +${sum.contraFx.hp}` : ''} (자연 감소 줄어든 효과 포함)</div>`;
+  if (sum.roomAff) alerts += `<div class="${sum.roomAff > 0 ? 'info' : 'alert'}">🛏️ ${roommateOf(s).short}이가 ${sum.roomAff > 0 ? '전기포트 라면에 감동했다' : '방에 있는 금지물품 때문에 불안해한다'} (친밀도 ${sign(sum.roomAff)})</div>`;
+  if (sum.roomFx < 0) alerts += `<div class="info">🤝 룸메 ${roommateOf(s).name}과 사이가 좋아서 스트레스가 덜 쌓였다 (${sum.roomFx})</div>`;
+  if (sum.roomFx > 0) alerts += `<div class="alert">🥶 룸메 ${roommateOf(s).name}과 냉전 중이라 방에 있는 게 괴롭다 (스트레스 +${sum.roomFx})</div>`;
   if (sum.burnout) alerts += `<div class="alert">🔥 번아웃! 쌓인 스트레스가 터졌다. 며칠을 침대에서 못 일어났다. (${changesToText(sum.burnout)}, 스트레스 55로)</div>`;
   for (const k of sum.warnings) {
     alerts += `<div class="alert">⚠️ ${STAT_NAME[k]}이(가) ${CONFIG.DANGER_LINE} 미만! 다음 턴이 끝날 때까지 ${CONFIG.DANGER_LINE} 이상으로 올리지 못하면 전학이다.</div>`;
@@ -2658,7 +2810,7 @@ function achvEndHTML() {
   const rm = roommateOf(s);
   const fresh = (s.newAchv || []).map(id => ACHIEVEMENTS.find(a => a.id === id)).filter(Boolean);
   return `
-    <div class="info" style="margin-top:14px">🛏️ 룸메 ${rm.name}(${rm.type})와의 최종 친밀도 <b>${s.aff}</b>${s.track ? ` · ${TRACK_NAME[s.track]}` : ''}${s.tripCourse ? ` · 수학여행 ${s.tripCourse === 'japan' ? '🇯🇵 일본 학교 방문' : '🏝️ 관광 코스'}` : ''}</div>
+    <div class="info" style="margin-top:14px">🛏️ 룸메 ${rm.name}(${rm.type})과의 최종 친밀도 <b>${s.aff}</b>${s.track ? ` · ${TRACK_NAME[s.track]}` : ''}${s.tripCourse ? ` · 수학여행 ${s.tripCourse === 'japan' ? '🇯🇵 일본 학교 방문' : '🏝️ 관광 코스'}` : ''}</div>
     ${fresh.length ? `<div class="quiz-cta" style="display:block"><b>🏆 새 업적 ${fresh.length}개 달성!</b><div class="chips" style="margin-top:8px">${fresh.map(a => `<span class="chip up">${a.emoji} ${a.name}</span>`).join('')}</div></div>` : ''}
     <details class="log" style="margin-top:12px"><summary>🏆 업적 도감 ${loadAchv().size}/${ACHIEVEMENTS.length}</summary>${achvGridHTML(s.newAchv)}</details>`;
 }
@@ -2726,6 +2878,7 @@ function stageHTML() {
   switch (s.phase) {
     case 'welcome': return welcomeHTML();
     case 'roulette': return rouletteHTML();
+    case 'pack': return packHTML();
     case 'shop': return shopHTML();
     case 'calendar': return calendarHTML();
     case 'calendarResult': return resultHTML('afterCalendar', '계속 →');
@@ -2850,6 +3003,8 @@ function handleAction(action, id) {
     case 'spin': spinWheel(); return;
     case 'toShop': goShop(s); break;
     case 'biweekly': chooseHome(s, id); break;
+    case 'pack': packItem(s, id); break;
+    case 'leavePack': leavePack(s); break;
     case 'buy': buyItem(s, id); break;
     case 'leaveShop': leaveShop(s); break;
     case 'special': doSpecial(s, id); break;
