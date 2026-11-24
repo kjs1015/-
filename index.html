@@ -270,6 +270,15 @@ details.log[open] summary::after { content: '접기 ▴'; }
 .over-emoji { font-size: 70px; text-align: center; line-height: 1.1; }
 .check { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--line); }
 
+/* 새 버전 알림 */
+.update-pill {
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  font-size: 13px; font-weight: 700; padding: 6px 10px; border-radius: 99px;
+  background: #FFF3BF; color: #8A5A00; border: 2px solid #F2C65A;
+}
+.update-pill.done { background: #E3F2EB; color: var(--green); border-color: #9DD5B8; }
+.update-note { margin-top: 12px; }
+
 .fade-in { animation: fadeIn .35s ease-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .fade-in, .delta { animation: none; } }
@@ -1027,6 +1036,51 @@ if (typeof module !== 'undefined') {
 
 const SAVE_KEY = 'pungsan-graduation-save-v1';
 
+// ---------- 자동 업데이트 ----------
+// 새 버전을 올릴 때: 아래 APP_VERSION 과 version.json 의 "version" 을 같은 값으로 바꾼다.
+// 그러면 접속 중인 사람은 1분 안에 알림을 받고, 지금 판이 끝나면 새 버전으로 바뀐다.
+const APP_VERSION = '2026.11.24-2';
+const VERSION_CHECK_MS = 60 * 1000;
+let remoteVersion = null;     // 서버에 올라온 최신 버전
+let newVersionReady = false;  // 새 버전이 기다리는 중인지
+let justUpdated = false;      // 방금 새 버전으로 바뀌었는지 (알림용)
+
+function sessionGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+function sessionSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }
+function sessionDel(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
+
+function gameFinished() { return !s || s.phase === 'ending' || s.phase === 'gameover'; }
+
+async function checkVersion() {
+  if (window.claude || location.protocol === 'file:') return;   // claude.ai·내 컴퓨터에서는 확인 안 함
+  try {
+    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.version || data.version === APP_VERSION) return;
+    if (sessionGet('pungsan-reloaded-for') === data.version) return;   // 이미 한 번 시도함 (무한 새로고침 방지)
+    remoteVersion = data.version;
+    if (!newVersionReady) {
+      newVersionReady = true;
+      if (!s && preScreen === 'title') applyUpdate('title');   // 게임 중이 아니면 바로 교체
+      else render();
+    }
+  } catch (e) { /* 인터넷이 끊겨도 게임은 계속 */ }
+}
+
+// 새 버전으로 새로고침. ?v= 를 붙여서 캐시된 옛날 파일이 아닌 새 파일을 받는다.
+function applyUpdate(next) {
+  sessionSet('pungsan-next', next);
+  sessionSet('pungsan-reloaded-for', remoteVersion);
+  location.replace(location.pathname + '?v=' + encodeURIComponent(remoteVersion));
+}
+
+function updateBadgeHTML() {
+  if (newVersionReady) return `<span class="update-pill" title="이번 판이 끝나면 새 버전으로 바뀌어요">🔔 새 버전 대기 중</span>`;
+  if (justUpdated) return `<span class="update-pill done">✨ 새 버전 적용됨</span>`;
+  return '';
+}
+
 let s = null;            // 현재 게임 상태 (게임 시작 전엔 null)
 let preScreen = 'title'; // 게임 시작 전 화면: 'title' | 'name' | 'focus'
 let draftName = '';      // 입력 중인 이름
@@ -1525,7 +1579,7 @@ function render() {
   const top = document.getElementById('topActions');
 
   if (!s) {   // 게임 시작 전
-    top.innerHTML = '';
+    top.innerHTML = updateBadgeHTML();
     if (preScreen === 'title') app.innerHTML = titleHTML();
     else if (preScreen === 'name') app.innerHTML = nameHTML();
     else app.innerHTML = focusHTML();
@@ -1534,8 +1588,12 @@ function render() {
     return;
   }
 
-  top.innerHTML = `<button class="btn ghost" data-action="reset">${resetArmed ? '정말? 한 번 더 누르기' : '처음부터'}</button>`;
+  top.innerHTML = updateBadgeHTML() + `<button class="btn ghost" data-action="reset">${resetArmed ? '정말? 한 번 더 누르기' : '처음부터'}</button>`;
   app.innerHTML = `<div class="grid">${playerHTML()}<main>${stageHTML()}</main></div>${logHTML()}`;
+  if (newVersionReady && gameFinished()) {
+    const stage = app.querySelector('main .card');
+    if (stage) stage.insertAdjacentHTML('beforeend', `<div class="info update-note">✨ <b>새 버전이 나왔어요!</b> '다시 입학하기'를 누르면 새 버전으로 시작돼요.</div>`);
+  }
 
   // 능력치 바: 이전 값에서 새 값으로 부드럽게 늘어나게
   requestAnimationFrame(() => {
@@ -1584,6 +1642,17 @@ function spinWheel() {
 // ---------- 버튼 클릭 처리 (이벤트 처리의 중심) ----------
 function handleAction(action, id) {
   if (action !== 'reset') resetArmed = false;
+  // 판이 끝났고 새 버전이 기다리고 있으면, 다음 판은 새 버전으로
+  if (newVersionReady && gameFinished() && (action === 'new' || action === 'home')) {
+    applyUpdate(action === 'new' ? 'name' : 'title');
+    return;
+  }
+  if (newVersionReady && action === 'reset' && resetArmed) {   // '처음부터'로 판을 포기해도 새 버전으로
+    try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+    applyUpdate('title');
+    return;
+  }
+  justUpdated = false;
   switch (action) {
     case 'new': s = null; preScreen = 'name'; draftName = ''; break;
     case 'continue': s = loadGame(); prevStats = null; lastPhase = null; wheelAngle = 0; break;
@@ -1637,7 +1706,28 @@ document.addEventListener('input', e => { if (e.target.id === 'nameInput') draft
 // 기록장 펼침 상태 기억
 document.addEventListener('toggle', e => { if (e.target.id === 'logBox') logOpen = e.target.open; }, true);
 
-render();   // 첫 화면 그리기
+// 방금 새 버전으로 새로고침됐다면 하던 화면으로 이어 준다
+(function afterUpdate() {
+  const next = sessionGet('pungsan-next');
+  if (!next) return;
+  sessionDel('pungsan-next');
+  justUpdated = true;
+  if (next === 'name') preScreen = 'name';
+  if (location.search) history.replaceState(null, '', location.pathname);   // 주소창의 ?v= 지우기
+})();
+
+// claude.ai 에서 페이지가 업데이트될 때 하던 게임을 그대로 이어 가기
+window.claude?.hot?.snapshot?.(() => ({ s: s, preScreen: preScreen, draftName: draftName }));
+function boot(data) {
+  if (data && data.s) { s = data.s; preScreen = data.preScreen || 'title'; draftName = data.draftName || ''; }
+  render();   // 첫 화면 그리기
+}
+if (window.claude?.hot?.ready) window.claude.hot.ready(boot);
+else boot(window.claude?.hot?.data ?? {});
+
+checkVersion();
+setInterval(checkVersion, VERSION_CHECK_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
 </script>
 </body>
 </html>

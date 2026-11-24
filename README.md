@@ -18,3 +18,9 @@
 ## 웹사이트로 공개하기 (GitHub Pages)
 저장소 **Settings → Pages**에서 Source를 `Deploy from a branch`로, 브랜치와 `/ (root)` 폴더를 고르고 Save 하면
 몇 분 뒤 `https://<아이디>.github.io/<저장소이름>/` 주소로 접속할 수 있습니다.
+
+## 새 버전 올리는 법 (자동 업데이트)
+`index.html` 안의 `APP_VERSION` 과 `version.json` 의 `"version"` 을 **같은 새 값**으로 바꿔서 올리면 된다.
+- 접속 중인 사람: 1분 안에 "🔔 새 버전 대기 중" 알림 → 지금 판이 끝나고 '다시 입학하기'를 누르면 새 버전으로 시작
+- 게임 중이 아닌 사람(첫 화면): 바로 새 버전으로 바뀜
+- 하던 판은 끊기지 않는다
