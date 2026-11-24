@@ -28,6 +28,8 @@
   --hp: #F76707;
   --soc: #2FB344;
   --fame: #E8A200;
+  --stress: #845EF7;
+  --penalty: #E5484D;
   --radius: 18px;
 }
 * { box-sizing: border-box; }
@@ -279,9 +281,17 @@ details.log[open] summary::after { content: '접기 ▴'; }
 .update-pill.done { background: #E3F2EB; color: var(--green); border-color: #9DD5B8; }
 .update-note { margin-top: 12px; }
 
+.gauges { margin-top: 14px; padding-top: 12px; border-top: 2px dashed var(--line); display: grid; gap: 10px; }
+.title-badge { display: inline-block; margin-top: 4px; font-size: 12px; font-weight: 700; color: #6A4B00; background: #FFF3BF; border-radius: 6px; padding: 1px 7px; }
+.crisis { margin-bottom: 12px; border-radius: 14px; padding: 10px 12px; background: #FFF1F1; border: 2px solid var(--red); color: #A12B2F; font-weight: 700; font-size: 14px; display: grid; gap: 4px; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(229, 72, 77, .35); } 50% { box-shadow: 0 0 0 6px rgba(229, 72, 77, 0); } }
+.date-tag { font-size: 13px; font-weight: 700; color: #8A5A00; background: #FFF3BF; border-radius: 99px; padding: 3px 10px; }
+.rival { margin: 8px auto 0; max-width: 420px; border-radius: 12px; padding: 8px 12px; background: #F3F0FF; border: 2px solid #D0BFFF; font-size: 14px; font-weight: 700; color: #5F3DC4; }
+.shake { animation: shake .45s; }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
 .fade-in { animation: fadeIn .35s ease-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .fade-in, .delta { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .fade-in, .delta, .shake, .crisis { animation: none; } }
 </style>
 </head>
 <body>
@@ -299,35 +309,46 @@ details.log[open] summary::after { content: '접기 ▴'; }
 //  - 이 부분은 화면(HTML)을 전혀 건드리지 않는다.
 //  - 그래서 브라우저 없이도 자동 시뮬레이션으로 밸런스를 테스트할 수 있다.
 //  - 숫자를 바꾸고 싶으면 맨 위 CONFIG 부터 고치면 된다.
+//  - 배경: 경북 안동시 풍산읍, 논밭 한가운데 있는 전원 기숙사 학교.
+//    학사 일정은 2026학년도 풍산고 학사일정표를 바탕으로 했다.
 // =====================================================================
 
 // ---------- 1. 밸런스 설정값 (여기 숫자만 바꿔도 난이도가 바뀐다) ----------
 const CONFIG = {
-  TOTAL_TURNS: 15,          // 3년 = 15턴 (한 턴 = 약 2개월)
+  TOTAL_TURNS: 15,          // 3년 = 15턴 (한 학년 = 5시기)
   START_STAT: 45,           // 모든 능력치 시작값
   FOCUS_BONUS: 10,          // 처음 고른 능력치 보너스
   DANGER_LINE: 25,          // 이 값 미만이면 '위험' 상태
   STREAK_TO_TRANSFER: 2,    // 위험 상태가 몇 턴 연속이면 전학인지
-  // 매 턴 끝날 때 자연 감소량 (2개월 동안 아무것도 안 하면 떨어지는 양)
-  DECAY: { int: 7, hp: 7, soc: 6, fame: 5 },
+  DECAY: { int: 8, hp: 8, soc: 7, fame: 6 },   // 매 턴 자연 감소량
   HIGH_LINE: 75,            // 이 값 이상인 능력치는 유지비가 더 든다
-  HIGH_EXTRA_DECAY: 3,      // 그때 추가로 감소하는 양
+  HIGH_EXTRA_DECAY: 3,
   SOFT_CAP: 80,             // 이 값 이상이면 상승량이 절반 (몰빵 방지)
-  RANDOM_EVENT_CHANCE: 0.65,// 매 턴 무작위 사건이 일어날 확률
-  MAX_ITEMS_PER_TURN: 2,    // 한 턴에 살 수 있는 아이템 개수
-  VACATION_TURNS: [5, 9, 11],                // 방학 턴 (1·2학년 여름, 3학년 올라가기 전 겨울)
-  EXAM_TURNS: [2, 4, 6, 8, 10, 12, 14],      // 시험 턴 (2턴마다)
-  FINAL_BASE: 0.46,         // 졸업고사 기본 통과 확률 (지능·체력 50 기준)
-  FINAL_INT_W: 0.020,       // 지능 1당 통과 확률 변화
-  FINAL_HP_W: 0.012,        // 체력 1당 통과 확률 변화
+  RANDOM_EVENT_CHANCE: 1.0, // 돌발 사건 확률 (기숙사 생활은 매일이 사건)
+  MAX_ITEMS_PER_TURN: 2,
+  VACATION_TURNS: [3, 5, 8, 10, 13],                  // 여름·겨울방학 (3학년 겨울은 수능이라 없음)
+  EXAM_TURNS: [1, 3, 4, 5, 6, 8, 9, 10, 11, 13, 14],  // 중간·기말고사 (마지막 턴은 수능)
+  // 스트레스: 기숙사 생활은 매일 쌓인다
+  START_STRESS: 20,
+  STRESS_PER_TURN: 14,       // 턴마다 저절로 쌓이는 스트레스
+  STRESS_HIGH: 70,          // 이 이상이면 성공률 -10%, 시험 실력 하락
+  STRESS_MAX: 100,          // 도달하면 번아웃
+  HOME_RELIEF: 6,           // 귀가 주말 스트레스 회복량
+  // 벌점: 기숙사 규칙 위반
+  PENALTY_WARN: 10,         // 이 점수를 넘으면 부모님 호출
+  PENALTY_OUT: 20,          // 이 점수면 강제 퇴사 = 퇴학
 };
 
-// ---------- 2. 기본 데이터 (리스트와 딕셔너리) ----------
+// ---------- 2. 기본 데이터 ----------
 const STATS = ['int', 'hp', 'soc', 'fame'];
-const STAT_NAME = { int: '지능', hp: '체력', soc: '사회성', fame: '명성' };
-const STAT_EMOJI = { int: '🧠', hp: '💪', soc: '🤝', fame: '⭐' };
+const STAT_NAME = { int: '지능', hp: '체력', soc: '사회성', fame: '명성', stress: '스트레스', penalty: '벌점' };
+const STAT_EMOJI = { int: '🧠', hp: '💪', soc: '🤝', fame: '⭐', stress: '😵', penalty: '🚨' };
+const ALL_KEYS = ['int', 'hp', 'soc', 'fame', 'stress', 'penalty'];
+const BAD_KEYS = ['stress', 'penalty'];   // 오르면 나쁜 값
 
-// 용돈 돌림판: chance 는 퍼센트(합계 100)
+const RIVAL_NAME = '서진';   // 전교 1등 라이벌 (가상의 인물)
+
+// 귀가 주말 용돈 돌림판: chance 는 퍼센트(합계 100)
 const ROULETTE = [
   { amount: 1000,  chance: 30, color: '#FFD8A8' },
   { amount: 3000,  chance: 30, color: '#FFF3BF' },
@@ -336,166 +357,138 @@ const ROULETTE = [
   { amount: 20000, chance: 5,  color: '#D0BFFF' },
 ];
 
-// 상점 아이템
+// 매점 아이템
 const ITEMS = [
-  { id: 'book',    name: '책',     emoji: '📚', price: 5000, stat: 'int', amount: 10, desc: '매점 옆 서점에서 산 문제집' },
-  { id: 'chew',    name: '마이쮸', emoji: '🍬', price: 3000, stat: 'soc', amount: 8,  desc: '반 친구들에게 돌리면 인기 폭발' },
-  { id: 'protein', name: '프로틴', emoji: '🥤', price: 5000, stat: 'hp',  amount: 10, desc: '체단실 형들이 추천한 초코맛' },
+  { id: 'book',    name: '책',       emoji: '📚', price: 5000, stat: 'int',    amount: 10,  desc: '매점 옆 서점에서 산 문제집' },
+  { id: 'chew',    name: '마이쮸',   emoji: '🍬', price: 3000, stat: 'soc',    amount: 8,   desc: '반 친구들에게 돌리면 인기 폭발' },
+  { id: 'protein', name: '프로틴',   emoji: '🥤', price: 5000, stat: 'hp',     amount: 10,  desc: '체단실 형들이 추천한 초코맛' },
+  { id: 'candy',   name: '단짠 과자', emoji: '🍫', price: 2000, stat: 'stress', amount: -10, desc: '연등 전에 먹으면 스트레스가 녹는다' },
 ];
 
 // ---------- 3. 작은 도우미 함수들 ----------
-
-// 금액을 한국식으로 바꾼다. 35000 -> "3만 5천원"
 function formatWon(n) {
   if (n === 0) return '0원';
   const sign = n < 0 ? '-' : '';
   n = Math.abs(n);
-  const man = Math.floor(n / 10000);            // 만 단위
-  const cheon = Math.floor((n % 10000) / 1000); // 천 단위
-  const rest = n % 1000;                        // 천 미만 (거의 안 나옴)
+  const man = Math.floor(n / 10000);
+  const cheon = Math.floor((n % 10000) / 1000);
+  const rest = n % 1000;
   const parts = [];
   if (man > 0) parts.push(man + '만');
   if (cheon > 0) parts.push(cheon + '천');
   if (rest > 0) parts.push(String(rest));
   return sign + parts.join(' ') + '원';
 }
-
-// 값을 최소~최대 사이로 묶는다
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
-
-// p(0~1) 확률로 true. 예: roll(0.75) -> 75% 확률로 true
 function roll(p) { return Math.random() < p; }
-
-// 가중치 목록에서 하나 뽑기. weights = [30, 30, 20, 15, 5] -> 인덱스 반환
 function pickWeightedIndex(weights) {
   let total = 0;
   for (const w of weights) total += w;
   let r = Math.random() * total;
-  for (let i = 0; i < weights.length; i++) {
-    r -= weights[i];
-    if (r < 0) return i;
-  }
+  for (let i = 0; i < weights.length; i++) { r -= weights[i]; if (r < 0) return i; }
   return weights.length - 1;
 }
 
-function gradeOf(turn) { return Math.ceil(turn / 5); }           // 1~5턴 1학년 ...
+// 스트레스가 높으면 모든 도전의 성공률이 떨어진다
+function stressMod(s) { return s.stress >= CONFIG.STRESS_HIGH ? -0.10 : 0; }
+function chanceS(s, p) { return clamp(p + stressMod(s), 0.05, 0.95); }
+function rollS(s, p) { return roll(chanceS(s, p)); }
+
+function gradeOf(turn) { return Math.ceil(turn / 5); }
+function periodOf(turn) { return (turn - 1) % 5 + 1; }   // 1:3~4월 2:5~6월 3:7~8월 4:9~10월 5:11~2월
 function isVacation(turn) { return CONFIG.VACATION_TURNS.includes(turn); }
 function isExamTurn(turn) { return CONFIG.EXAM_TURNS.includes(turn); }
 
-function turnLabel(turn) {
-  const g = gradeOf(turn);
-  const inYear = (turn - 1) % 5 + 1;
-  let tag = '';
-  if (isVacation(turn)) tag = turn === 11 ? ' · 겨울방학' : ' · 여름방학';
-  else if (isExamTurn(turn)) tag = ' · 시험 기간';
-  else if (turn === CONFIG.TOTAL_TURNS) tag = ' · 졸업 직전';
-  else if (inYear === 1) tag = ' · 새 학기';
-  return `${g}학년 ${inYear}번째 시기${tag}`;
+const PERIODS = ['3~4월', '5~6월', '7~8월', '9~10월', '11~2월'];
+const PERIOD_TITLE = ['새 학기 · 중간고사', '학부모 상담 · 모의고사', '기말고사 · 여름방학', '추석 · 중간고사', '기말고사 · 봉황축제 · 겨울방학'];
+function turnLabel(turn) { return `${gradeOf(turn)}학년 ${PERIODS[periodOf(turn) - 1]}`; }
+function turnTitle(turn) {
+  if (turn === CONFIG.TOTAL_TURNS) return '수능 · 졸업';
+  if (turn === 13) return '기말고사 · 수능 D-100';
+  return PERIOD_TITLE[periodOf(turn) - 1];
 }
 
-// ---------- 4. 능력치 변경 (0~100 유지 + 몰빵 방지) ----------
-
-// 능력치 하나를 바꾸고, 실제로 바뀐 양을 돌려준다
+// ---------- 4. 능력치 변경 ----------
 function changeStat(s, key, delta) {
-  // SOFT_CAP 이상에서는 오르는 양이 절반 (올림)
+  if (key === 'stress') { const b = s.stress; s.stress = clamp(b + delta, 0, CONFIG.STRESS_MAX); return s.stress - b; }
+  if (key === 'penalty') { const b = s.penalty; s.penalty = Math.max(0, b + delta); return s.penalty - b; }
   if (delta > 0 && s.stats[key] >= CONFIG.SOFT_CAP) delta = Math.ceil(delta / 2);
   const before = s.stats[key];
   s.stats[key] = clamp(before + delta, 0, 100);
   return s.stats[key] - before;
 }
-
-// 여러 능력치를 한 번에 바꾼다. deltas = { int: 5, hp: -3 }
 function applyChanges(s, deltas) {
   const real = {};
-  for (const key of STATS) {
-    if (deltas[key]) real[key] = changeStat(s, key, deltas[key]);
+  for (const key of ALL_KEYS) {
+    if (deltas[key]) { const d = changeStat(s, key, deltas[key]); if (d) real[key] = d; }
   }
   return real;
 }
-
-// 기록장에 한 줄 남기기
-function addLog(s, icon, text) {
-  s.log.push({ turn: s.turn, icon: icon, text: text });
-}
-
-// 변화량을 "지능 +5, 체력 -3" 같은 글자로
+function addLog(s, icon, text) { s.log.push({ turn: s.turn, icon: icon, text: text }); }
 function changesToText(real) {
   const parts = [];
-  for (const key of STATS) {
-    if (real[key]) parts.push(STAT_NAME[key] + ' ' + (real[key] > 0 ? '+' : '') + real[key]);
-  }
+  for (const key of ALL_KEYS) if (real[key]) parts.push(STAT_NAME[key] + ' ' + (real[key] > 0 ? '+' : '') + real[key]);
   return parts.join(', ');
 }
 
 // ---------- 5. 새 게임 ----------
 function newGame(name, focus) {
   const s = {
-    version: 1,
-    name: name,
-    focus: focus,
-    turn: 1,
-    money: 0,
+    version: 2,
+    name: name, focus: focus, turn: 1, money: 0,
     stats: { int: CONFIG.START_STAT, hp: CONFIG.START_STAT, soc: CONFIG.START_STAT, fame: CONFIG.START_STAT },
-    lowStreak: { int: 0, hp: 0, soc: 0, fame: 0 },  // 능력치별 '위험 상태' 연속 턴 수
-    phase: 'welcome',      // 지금 어떤 화면인지 (게임 상태 관리의 핵심!)
-    spun: false,           // 이번 턴 돌림판 돌렸는지
-    lastSpin: null,
-    boughtThisTurn: 0,     // 이번 턴 산 아이템 수
-    eventDone: false,      // 이번 턴 특별 이벤트 했는지 (중복 방지)
-    lastEvent: null,       // 직전 턴 특별 이벤트 (반복 시 효과 반감)
-    outingCount: 0,        // 무단외출 성공 횟수 (할수록 위험해짐)
-    examTaken: false,
-    pendingRandom: null,   // 지금 선택을 기다리는 무작위 사건 id
-    result: null,          // 화면에 보여줄 가장 최근 결과
-    turnStartStats: null,  // 턴 요약용
-    summary: null,
-    exams: [],             // 시험 기록
-    log: [],               // 모든 선택과 사건 기록
-    ending: null,
+    lowStreak: { int: 0, hp: 0, soc: 0, fame: 0 },
+    stress: CONFIG.START_STRESS,
+    penalty: 0,
+    penaltyWarned: false,
+    burnouts: 0,
+    president: false,       // 학생회장 당선 여부
+    rumorPending: false,    // 무단외출 사진이 돌고 있는지
+    phase: 'welcome',
+    spun: false, lastSpin: null, boughtThisTurn: 0,
+    calendarDone: false, eventDone: false, lastEvent: null,
+    outingCount: 0, caughtCount: 0,
+    examTaken: false, pendingRandom: null, result: null,
+    turnStartStats: null, summary: null,
+    exams: [], rivalWins: 0, rivalLosses: 0,
+    log: [], ending: null,
   };
   s.stats[focus] += CONFIG.FOCUS_BONUS;
-  addLog(s, '🏫', `${name}, 풍산고 입학! (${STAT_NAME[focus]} 집중 육성)`);
+  addLog(s, '🏫', `${name}, 풍산고 입학! 오늘부터 기숙사 생활 시작 (${STAT_NAME[focus]} 집중 육성)`);
   return s;
 }
 
-// 입학 화면 -> 첫 턴 시작
 function startTurn(s) {
   s.phase = 'roulette';
-  s.spun = false;
-  s.lastSpin = null;
-  s.boughtThisTurn = 0;
-  s.eventDone = false;
-  s.examTaken = false;
-  s.pendingRandom = null;
-  s.result = null;
-  s.summary = null;
+  s.spun = false; s.lastSpin = null; s.boughtThisTurn = 0;
+  s.calendarDone = false; s.eventDone = false; s.examTaken = false;
+  s.pendingRandom = null; s.result = null; s.summary = null;
   s.turnStartStats = Object.assign({}, s.stats);
+  s.turnStartStress = s.stress;
+  s.turnStartPenalty = s.penalty;
   s.turnStartMoney = s.money;
 }
 
-// ---------- 6. 용돈 돌림판 ----------
+// ---------- 6. 귀가 주말 용돈 돌림판 ----------
 function spinRoulette(s) {
-  if (s.phase !== 'roulette' || s.spun) return null;   // 한 턴에 한 번만
-  const weights = ROULETTE.map(r => r.chance);
-  const index = pickWeightedIndex(weights);
+  if (s.phase !== 'roulette' || s.spun) return null;
+  const index = pickWeightedIndex(ROULETTE.map(r => r.chance));
   const amount = ROULETTE[index].amount;
   s.money += amount;
   s.spun = true;
-  s.lastSpin = { index: index, amount: amount };
-  addLog(s, '🎡', `용돈 돌림판: ${formatWon(amount)} 획득`);
+  const relief = changeStat(s, 'stress', -CONFIG.HOME_RELIEF);   // 집밥 먹고 회복
+  s.lastSpin = { index: index, amount: amount, relief: relief };
+  addLog(s, '🏠', `귀가 주말: 용돈 ${formatWon(amount)}, 집밥으로 스트레스 ${relief}`);
   return s.lastSpin;
 }
-
 function goShop(s) { if (s.spun) s.phase = 'shop'; }
 
-// ---------- 7. 상점 ----------
-// 살 수 있으면 null, 못 사면 이유를 글자로 돌려준다
+// ---------- 7. 매점 ----------
 function cannotBuyReason(s, item) {
   if (s.boughtThisTurn >= CONFIG.MAX_ITEMS_PER_TURN) return `이번 턴엔 ${CONFIG.MAX_ITEMS_PER_TURN}개까지만`;
   if (s.money < item.price) return '용돈 부족';
   return null;
 }
-
 function buyItem(s, itemId) {
   if (s.phase !== 'shop') return null;
   const item = ITEMS.find(it => it.id === itemId);
@@ -506,172 +499,567 @@ function buyItem(s, itemId) {
   addLog(s, item.emoji, `${item.name} 구매 (${formatWon(item.price)}) → ${changesToText(real) || '변화 없음'}`);
   return real;
 }
+function leaveShop(s) { if (s.phase === 'shop') s.phase = 'calendar'; }
 
-function leaveShop(s) { if (s.phase === 'shop') s.phase = 'event'; }
+// ---------- 8. 벌점 판정 (선택 결과가 나올 때마다 확인) ----------
+function checkPenalty(s) {
+  if (s.penalty >= CONFIG.PENALTY_OUT) {
+    s.ending = { type: 'expel', reason: `기숙사 벌점 ${s.penalty}점 누적 → 강제 퇴사, 퇴학 처리` };
+    addLog(s, '🚨', s.ending.reason);
+    s.phase = 'gameover';
+    return true;
+  }
+  if (!s.penaltyWarned && s.penalty >= CONFIG.PENALTY_WARN) {
+    s.penaltyWarned = true;
+    const real = applyChanges(s, { fame: -5, stress: 12 });
+    if (s.result) s.result.warn = `📞 벌점 ${s.penalty}점! 부모님이 학교에 호출됐다. (${changesToText(real)}) ${CONFIG.PENALTY_OUT}점이 되면 퇴사다.`;
+    addLog(s, '📞', `벌점 ${s.penalty}점 → 부모님 호출`);
+  }
+  return false;
+}
 
-// ---------- 8. 특별 이벤트 ----------
-// successChance(s): 성공 확률(0~1). run(s, ok): 결과 반환
+// ---------- 9. 학사 일정 이벤트 (실제 풍산고 학사일정표 기반, 매 턴 고정) ----------
+// 각 시기·학년마다 하나씩. choices 형식은 돌발 사건과 같다.
+function mockExam(date, title, text) {
+  return {
+    date: date, title: title, text: text,
+    choices: [
+      { label: '실전처럼 집중해서 푼다', note: '지능 60 이상이면 좋은 결과', exp: { int: 4, stress: 5 },
+        run: s => s.stats.int >= 60
+          ? { text: '생각보다 잘 나왔다! 담임 선생님이 성적표를 보고 고개를 끄덕였다.', deltas: { int: 4, fame: 5, stress: -6 } }
+          : { text: '시간이 모자라서 마지막 장은 찍었다. 진짜 수능이 무섭다.', deltas: { int: 3, stress: 12 } } },
+      { label: '전날 밤새 벼락치기', exp: { int: 7, hp: -6, stress: 10 },
+        run: () => ({ text: '연등실 형광등 아래서 해가 떴다. 머리는 꽉 찼는데 몸이 천근만근.', deltas: { int: 7, hp: -6, stress: 10 } }) },
+      { label: '어차피 연습, 편하게 본다', exp: { stress: -8, int: -2 },
+        run: () => ({ text: '마음은 편했다. 성적표는… 보지 않기로 했다.', deltas: { stress: -8, int: -2 } }) },
+    ],
+  };
+}
+
+const CALENDAR = {
+  // 3~4월
+  1: {
+    1: {
+      date: '4월 10일(금)', title: '🏯 전통문화체험 · 병산서원과 하회마을',
+      text: '1학년 전체가 버스를 타고 병산서원과 하회마을로. 만대루에 앉으니 낙동강과 병산이 한눈에 들어온다.',
+      choices: [
+        { label: '해설사 설명을 받아 적는다', exp: { int: 6, fame: 2, stress: -3 },
+          run: () => ({ text: '서애 류성룡 이야기를 노트 두 장에 정리했다. 국사 선생님이 보고 감탄!', deltas: { int: 6, fame: 2, stress: -3 } }) },
+        { label: '하회탈 쓰고 반 단체사진', exp: { soc: 6, fame: 3, stress: -8 },
+          run: () => ({ text: '반 전체가 하회탈을 쓰고 찍은 사진이 학교 SNS 메인에 올라갔다.', deltas: { soc: 6, fame: 3, stress: -8 } }) },
+        { label: '몰래 빠져서 마을 장터 구경', note: '40% 확률로 인원 점검에 걸림', exp: { soc: 5, stress: -12 },
+          run: s => rollS(s, 0.6)
+            ? { text: '간고등어 굽는 냄새에 홀려 장터 한 바퀴. 아무도 몰랐다!', deltas: { soc: 5, stress: -14 } }
+            : { text: '"한 명 비는데?" 버스 출발이 20분 늦어졌다. 전교생이 너를 기다렸다.', deltas: { penalty: 5, fame: -6, stress: 6 } } },
+      ],
+    },
+    2: {
+      date: '4월 10일(금)', title: '🏯 전통문화체험 · 도산서원',
+      text: '2학년은 도산서원으로. 퇴계 이황 선생이 제자들을 가르치던 도산서당 앞에 섰다.',
+      choices: [
+        { label: '필사 체험에 진심으로 임한다', exp: { int: 6, stress: -4 },
+          run: () => ({ text: '붓글씨로 한 자 한 자. 마음이 이상하게 차분해졌다.', deltas: { int: 6, stress: -6 } }) },
+        { label: '친구들과 낙동강 따라 산책', exp: { soc: 6, stress: -8 },
+          run: () => ({ text: '강바람 맞으며 진로 고민을 털어놨다. 이런 대화는 처음이다.', deltas: { soc: 6, hp: 2, stress: -8 } }) },
+        { label: '버스 뒷자리에서 몰래 폰 게임 대회', note: '50% 확률로 압수', exp: { soc: 8, stress: -10 },
+          run: s => rollS(s, 0.5)
+            ? { text: '버스 뒷자리 리그 우승! 반 남자애들 사이에서 전설이 됐다.', deltas: { soc: 8, fame: 3, stress: -10 } }
+            : { text: '"폰 내." 담임 선생님 목소리에 버스가 조용해졌다. 폰 압수, 벌점.', deltas: { penalty: 4, soc: 2, stress: 6 } } },
+      ],
+    },
+    3: mockExam('3월 24일(화)', '📝 3월 전국연합학력평가', '고3 첫 모의고사. 담임 선생님: "이 성적이 그대로 수능 성적이다." 교실에 정적이 흐른다.'),
+  },
+  // 5~6월
+  2: {
+    1: null, 2: null,   // 1·2학년은 아래 공통 이벤트
+    3: mockExam('6월 4일(목)', '📝 6월 모의평가', '평가원이 출제하는 진짜 모의고사. 수능 출제 경향이 여기서 보인다.'),
+  },
+  // 7~8월
+  3: {
+    1: null, 2: null,
+    3: {
+      date: '7월 말', title: '📆 수능 D-100',
+      text: '교실 칠판에 "D-100"이 적혔다. 3학년 기숙사 복도의 공기가 달라졌다.',
+      choices: [
+        { label: '100일 계획표를 짠다', exp: { int: 5, stress: 4 },
+          run: () => ({ text: '형광펜으로 빽빽한 계획표 완성. 보기만 해도 든든하다.', deltas: { int: 5, stress: 4 } }) },
+        { label: '반 친구들과 롤링페이퍼', exp: { soc: 6, stress: -10 },
+          run: () => ({ text: '"우리 꼭 같이 웃으면서 졸업하자." 종이 한 장에 힘이 났다.', deltas: { soc: 6, stress: -10 } }) },
+        { label: '불안해서 매일 밤샘 시작', exp: { int: 9, hp: -7, stress: 15 },
+          run: () => ({ text: '연등실 마지막 불을 끄는 사람이 매일 너다. 다크서클이 진해진다.', deltas: { int: 9, hp: -7, stress: 15 } }) },
+      ],
+    },
+  },
+  // 9~10월
+  4: {
+    1: {
+      date: '10월 21~23일', title: '⛺ 1학년 야영체험',
+      text: '2박 3일 야영! 텐트 치고, 캠프파이어하고, 마지막 밤엔 담력 훈련까지.',
+      choices: [
+        { label: '캠프파이어 장기자랑 MC', note: '사회성 높을수록 성공↑', exp: { fame: 6 },
+          run: s => rollS(s, clamp(0.35 + (s.stats.soc - 40) * 0.01, 0.2, 0.9))
+            ? { text: '드립이 터질 때마다 불꽃처럼 함성이 올라갔다. 야영의 주인공!', deltas: { fame: 12, soc: 5, stress: -8 } }
+            : { text: '준비한 개그가 전부 싸늘했다… 귀뚜라미 소리만 들렸다.', deltas: { fame: -6, stress: 8 } } },
+        { label: '텐트 조장을 맡는다', exp: { soc: 8, hp: -3 },
+          run: () => ({ text: '비 오는 밤, 무너진 텐트를 조원들과 다시 세웠다. 진짜 친구가 생겼다.', deltas: { soc: 8, hp: -3, stress: -4 } }) },
+        { label: '담력 훈련 귀신 역 자원', note: '50% 확률로 사고', exp: { fame: 4 },
+          run: s => rollS(s, 0.5)
+            ? { text: '산길에서 튀어나온 너 때문에 비명이 3분간 끊이지 않았다. 레전드.', deltas: { fame: 9, soc: 3, stress: -6 } }
+            : { text: '너무 무서웠는지 한 명이 울면서 넘어졌다. 선생님께 혼나고 벌점.', deltas: { penalty: 3, soc: -5, stress: 6 } } },
+      ],
+    },
+    2: {
+      date: '10월 26~29일', title: '✈️ 국제교류 · 일본 학교 방문',
+      text: '2학년 국제교류로 일본 자매 학교를 방문했다. 이어서 문화체험학습까지 4일 일정!',
+      choices: [
+        { label: '일본 학생들 앞에서 학교 소개 발표', note: '지능·사회성 높을수록 성공↑', exp: { fame: 6 },
+          run: s => rollS(s, clamp(0.2 + (s.stats.int + s.stats.soc - 80) * 0.006, 0.15, 0.9))
+            ? { text: '"풍산고는 안동의 자랑입니다!" 박수가 쏟아졌다. 교류 사진에 네가 한가운데.', deltas: { fame: 12, int: 3, stress: -4 } }
+            : { text: '준비한 일본어 인사말이 머릿속에서 하얗게 날아갔다.', deltas: { fame: -4, stress: 9 } } },
+        { label: '현지 친구를 사귄다', exp: { soc: 8, stress: -10 },
+          run: () => ({ text: '라인 친구가 세 명 생겼다. 서툰 영어로도 충분히 웃었다.', deltas: { soc: 8, stress: -10 } }) },
+        { label: '쇼핑에 용돈 올인', cost: 5000, exp: { soc: 3, stress: -16 },
+          run: () => ({ text: '반 친구들 선물까지 샀다. 지갑은 가볍지만 마음은 꽉 찼다.', deltas: { soc: 3, stress: -16 } }) },
+      ],
+    },
+    3: mockExam('9월 3일(목)', '📝 9월 모의평가', '수능 전 마지막 평가원 모의고사. 이 성적으로 수시 원서를 쓴다.'),
+  },
+  // 11~2월
+  5: {
+    1: null, 2: null,
+    3: {
+      date: '11월 18일(수)', title: '🎒 수능 전날 밤, 기숙사',
+      text: '내일이 수능이다. 후배들이 붙여 준 응원 포스트잇이 방문에 빼곡하다.',
+      choices: [
+        { label: '평소보다 일찍 잔다', exp: { stress: -20 },
+          run: () => ({ text: '불을 끄고 누웠다. 3년 동안 들은 기숙사 소음이 오늘은 자장가 같다.', deltas: { stress: -20, hp: 3 } }) },
+        { label: '오답노트 마지막 점검', exp: { int: 5, stress: 5 },
+          run: () => ({ text: '자주 틀리던 유형을 한 번 더 봤다. 내일 저 문제 나오면 맞힌다.', deltas: { int: 5, stress: 5 } }) },
+        { label: '룸메와 서로 응원하며 수다', exp: { soc: 5, stress: -12 },
+          run: () => ({ text: '"3년 동안 고마웠다." 불 꺼진 방에서 처음 해 본 말이었다.', deltas: { soc: 5, stress: -12 } }) },
+      ],
+    },
+  },
+};
+
+// 1·2학년 공통 학사 일정
+const CALENDAR_COMMON = {
+  2: {
+    date: '6월 6일(토)', title: '⛰️ 문경새재 과거길 걷기',
+    text: '옛 선비들이 한양으로 과거 보러 가던 그 길. 1·2학년이 문경새재 제1관문부터 걷는다.',
+    choices: [
+      { label: '선두로 완주에 도전', note: '체력 높을수록 성공↑', exp: { hp: 4, fame: 6 },
+        run: s => rollS(s, clamp(0.2 + s.stats.hp * 0.009, 0.15, 0.9))
+          ? { text: '제3관문 1등 도착! 뒤따라온 선생님이 "장원 급제감"이라며 웃었다.', deltas: { hp: 6, fame: 9, stress: -6 } }
+          : { text: '제2관문에서 다리가 풀렸다. 친구 어깨를 빌려 겨우 내려왔다.', deltas: { hp: -8, fame: -2, stress: 7 } } },
+      { label: '친구들과 수다 떨며 천천히', exp: { soc: 6, hp: 2, stress: -8 },
+        run: () => ({ text: '단풍은 아직이지만 이야기꽃이 만발했다.', deltas: { soc: 6, hp: 2, stress: -8 } }) },
+      { label: '책바위에 장원 급제 소원 빌기', exp: { int: 3, stress: -6 },
+        run: () => ({ text: '돌탑에 작은 돌 하나를 얹었다. 왠지 다음 시험은 잘 볼 것 같다.', deltas: { int: 3, stress: -6 } }) },
+    ],
+  },
+  3: {
+    date: '7월 13일(월)', title: '🗳️ 학생회장 선거',
+    text: '풍산고 학생회장 선거 공고가 붙었다. "기숙사 생활 개선" 공약이 최고 인기다.',
+    choices: [
+      { label: '회장 후보로 출마한다', note: '명성·사회성 높을수록 당선↑', exp: { fame: 8, stress: 6 },
+        run: s => {
+          if (s.president) return { text: '연임 도전! "약속을 지킨 회장"이라는 평가에 압도적으로 당선됐다.', deltas: { fame: 8, soc: 4, stress: 4 } };
+          return rollS(s, clamp(0.05 + (s.stats.fame + s.stats.soc - 100) * 0.009, 0.05, 0.85))
+            ? { text: '"매점 영업시간 연장!" 공약이 먹혔다. 당선!! 이제 풍산고 학생회장이다.', deltas: { fame: 16, soc: 6, stress: 5 }, president: true }
+            : { text: '개표 결과… 아쉽게 낙선. 그래도 유세하면서 이름은 확실히 알렸다.', deltas: { fame: 3, stress: 12 } };
+        } },
+      { label: '친구 선거 운동을 돕는다', exp: { soc: 7, hp: -3 },
+        run: () => ({ text: '아침마다 기숙사 앞에서 피켓을 들었다. 의리 하나는 인정받았다.', deltas: { soc: 7, hp: -3 } }) },
+      { label: '관심 없다, 자습실로', exp: { int: 4 },
+        run: () => ({ text: '복도의 선거 열기를 뒤로하고 문제집을 폈다.', deltas: { int: 4 } }) },
+    ],
+  },
+  5: {
+    date: '12월 21일(월)', title: '🦅 봉황축제',
+    text: '풍산고 최대 축제, 봉황축제! 기말고사도 끝났고 오늘만큼은 모두가 주인공이다.',
+    choices: [
+      { label: '반 대표로 무대에 선다', note: '명성·사회성 높을수록 성공↑', exp: { fame: 6 },
+        run: s => rollS(s, clamp(0.25 + s.stats.fame * 0.004 + s.stats.soc * 0.004, 0.2, 0.9))
+          ? { text: '앵콜이 세 번 터졌다. 봉황축제의 주인공은 너!', deltas: { fame: 14, soc: 4, stress: -10 } }
+          : { text: '마이크가 하울링… 웃음거리가 됐다. 대나무숲에 영상이 올라왔다.', deltas: { fame: -7, stress: 8 } } },
+      { label: '반 부스(떡꼬치) 운영', exp: { soc: 7, fame: 3 },
+        run: () => ({ text: '떡꼬치 완판! 수익금 일부를 나눠 받았다.', deltas: { soc: 7, fame: 3, hp: -3 }, money: 3000 }) },
+      { label: '축제 뒤풀이, 방에서 몰래 야식', note: '30% 확률로 걸림', exp: { soc: 8, stress: -12 },
+        run: s => rollS(s, 0.7)
+          ? { text: '불 끄고 이불 속 치킨 파티. 올해 최고의 밤.', deltas: { soc: 8, stress: -14 } }
+          : { text: '치킨 냄새가 복도까지 퍼졌다. 사감실 호출.', deltas: { penalty: 5, fame: -4, stress: 6 } } },
+    ],
+  },
+};
+CALENDAR_COMMON[1] = null; CALENDAR_COMMON[4] = null;
+
+function getCalendarEvent(s) {
+  const p = periodOf(s.turn), g = gradeOf(s.turn);
+  return (CALENDAR[p] && CALENDAR[p][g]) || CALENDAR_COMMON[p] || null;
+}
+
+function chooseCalendar(s, choiceIndex) {
+  if (s.phase !== 'calendar' || s.calendarDone) return null;
+  const ev = getCalendarEvent(s);
+  const choice = ev && ev.choices[choiceIndex];
+  if (!choice || !canChoose(s, choice)) return null;
+  s.calendarDone = true;
+  if (choice.cost) s.money -= choice.cost;
+  const res = choice.run(s);
+  if (res.money) s.money += res.money;
+  if (res.president) s.president = true;
+  const real = applyChanges(s, res.deltas);
+  s.result = { kind: 'calendar', title: ev.title, date: ev.date, text: res.text, changes: real, choice: choice.label, cost: choice.cost || 0, money: res.money || 0, bad: isBad(real) };
+  addLog(s, '📅', `${ev.title.slice(ev.title.indexOf(' ') + 1)}: '${choice.label}' → ${changesToText(real) || '변화 없음'}`);
+  if (checkPenalty(s)) return s.result;
+  s.phase = 'calendarResult';
+  return s.result;
+}
+function afterCalendarResult(s) {
+  if (s.phase !== 'calendarResult') return;
+  s.result = null;
+  s.phase = 'event';
+}
+
+// 결과가 나쁜 쪽인지 (화면 흔들기용)
+function isBad(real) {
+  let score = 0;
+  for (const k of ALL_KEYS) if (real[k]) score += BAD_KEYS.includes(k) ? -real[k] : real[k];
+  return score <= -6 || (real.penalty || 0) > 0;
+}
+
+// ---------- 10. 특별 활동 ----------
 const SPECIAL_EVENTS = [
   {
     id: 'outing', name: '무단외출', emoji: '🏃', risk: true,
-    desc: '점호 전에 담 넘어서 시내 떡볶이 먹고 오기',
-    hint: '성공: 사회성 +20 / 실패: 즉시 퇴학',
+    desc: '점호 전에 담 넘어서 막차 타고 안동 시내 찜닭 먹고 오기',
+    hint: '성공: 사회성 +18, 스트레스 -25 / 실패: 벌점 +12',
     note: '성공할수록 사감 선생님이 의심한다 (다음 성공률 -10%)',
     successChance: s => clamp(0.75 - 0.10 * s.outingCount + (s.stats.soc >= 70 ? 0.05 : 0), 0.3, 0.9),
     run(s, ok) {
       if (ok) {
         s.outingCount += 1;
-        return { ok: true, text: '친구들이 이불로 위장 인형까지 만들어 줬다. 떡볶이는 인생 최고의 맛! 무사 귀환.', deltas: { soc: 20 } };
+        if (roll(0.5)) s.rumorPending = true;   // 누군가 사진을 찍었을지도…
+        return { ok: true, text: '논길을 가로질러 버스 정류장까지 전력질주. 찜닭골목의 찜닭은 인생 최고의 맛! 이불 인형 덕에 무사 귀환.', deltas: { soc: 18, stress: -25 } };
       }
-      return { ok: false, expel: true, text: '담을 넘는 순간… 손전등 불빛. "어디 가니?" 사감 선생님이었다.', deltas: {} };
+      s.caughtCount += 1;
+      return { ok: false, text: '담을 넘는 순간… 손전등 불빛. "어디 가니?" 사감 선생님이었다. 사감실 직행.', deltas: { penalty: 12, fame: -6, stress: 12 } };
     },
   },
   {
     id: 'gym', name: '체단실 가기', emoji: '🏋️', risk: false,
-    desc: '저녁 먹고 체력단련실에서 쇠질',
-    hint: '체력 +12 (실패 없음)',
+    desc: '저녁 먹고 기숙사 체력단련실에서 쇠질', hint: '체력 +12, 스트레스 -4 (실패 없음)',
     successChance: () => 1,
-    run(s) {
-      return { ok: true, text: '벤치프레스 옆 선배가 자세를 봐 줬다. 근육통은 성장의 증거.', deltas: { hp: 12 } };
-    },
+    run: () => ({ ok: true, text: '벤치프레스 옆 선배가 자세를 봐 줬다. 근육통은 성장의 증거.', deltas: { hp: 12, stress: -4 } }),
   },
   {
     id: 'talent', name: '장기자랑 나가기', emoji: '🎤', risk: false,
-    desc: '학교 행사 무대에 서기',
-    hint: '성공: 명성 +18, 사회성 +5 / 실패: 명성 -8',
+    desc: '학교 행사 무대에 서기', hint: '성공: 명성 +18, 사회성 +5 / 실패: 명성 -8',
     note: '사회성이 높을수록 성공률↑',
     successChance: s => clamp(0.80 + (s.stats.soc - 50) * 0.004, 0.55, 0.95),
     run(s, ok) {
-      if (ok) return { ok: true, text: '첫 소절에서 강당이 뒤집어졌다. 다음 날 급식실에서 다들 알아본다!', deltas: { fame: 18, soc: 5 } };
-      return { ok: false, text: '긴장해서 가사를 통째로 까먹었다… 정적 3초. 학교 대나무숲에 올라갔다.', deltas: { fame: -8 } };
+      if (ok) return { ok: true, text: '첫 소절에서 강당이 뒤집어졌다. 다음 날 급식실에서 다들 알아본다!', deltas: { fame: 18, soc: 5, stress: -5 } };
+      return { ok: false, text: '긴장해서 가사를 통째로 까먹었다… 정적 3초. 학교 대나무숲에 올라갔다.', deltas: { fame: -8, stress: 10 } };
     },
   },
   {
-    id: 'study', name: '저녁 쉬는 시간 자습', emoji: '📖', risk: false,
-    desc: '남들 쉴 때 일찍 자습실 가서 공부',
-    hint: '지능 +12, 체력 -3',
+    id: 'study', name: '저녁 자습', emoji: '📖', risk: false,
+    desc: '남들 쉴 때 일찍 자습실 가서 공부', hint: '지능 +12, 체력 -3, 스트레스 +6',
     successChance: () => 1,
-    run(s) {
-      return { ok: true, text: '조용한 자습실, 오늘따라 문제가 술술 풀린다. 대신 저녁 산책은 포기.', deltas: { int: 12, hp: -3 } };
-    },
+    run: () => ({ ok: true, text: '조용한 자습실, 오늘따라 문제가 술술 풀린다. 대신 저녁 산책은 포기.', deltas: { int: 12, hp: -3, stress: 6 } }),
   },
   {
     id: 'night', name: '연등하기', emoji: '🌙', risk: false,
-    desc: '소등 후 연등실에서 새벽까지 공부',
-    hint: '성공: 지능 +25, 체력 -4 / 실패: 지능 -3, 체력 -10',
-    note: '체력 40 미만이면 성공률↓, 실패 피해↑',
+    desc: '소등 후 연등실에서 새벽까지 공부', hint: '성공: 지능 +25 / 실패: 지능 -3, 체력 -10',
+    note: '체력 40 미만이면 성공률↓ · 스트레스가 크게 쌓인다',
     successChance: s => clamp(0.70 - Math.max(0, 40 - s.stats.hp) * 0.015, 0.3, 0.7),
     run(s, ok) {
-      if (ok) return { ok: true, text: '새벽 2시, 드디어 그 킬러 문제를 풀었다. 졸리지만 뿌듯하다.', deltas: { int: 25, hp: -4 } };
-      const extra = s.stats.hp < 35 ? -4 : 0;   // 체력이 낮으면 더 크게 무너진다
-      return { ok: false, text: '책상에 엎드려 기절… 아침 점호에 지각했다. 머릿속에 남은 건 침 자국뿐.' + (extra ? ' (체력이 낮아 더 크게 무너졌다)' : ''), deltas: { int: -3, hp: -10 + extra } };
+      if (ok) return { ok: true, text: '새벽 2시, 드디어 그 킬러 문제를 풀었다. 졸리지만 뿌듯하다.', deltas: { int: 25, hp: -4, stress: 10 } };
+      const extra = s.stats.hp < 35 ? -4 : 0;
+      return { ok: false, text: '책상에 엎드려 기절… 아침 점호에 지각했다. 머릿속에 남은 건 침 자국뿐.' + (extra ? ' (체력이 낮아 더 크게 무너졌다)' : ''), deltas: { int: -3, hp: -10 + extra, stress: 8 } };
     },
+  },
+  {
+    id: 'volunteer', name: '기숙사 봉사 (상점)', emoji: '🧹', risk: false,
+    desc: '주말에 기숙사 청소 봉사하고 상점 받기', hint: '벌점 -6, 명성 +3, 체력 -3',
+    note: '벌점이 없으면 대신 사회성 +4',
+    successChance: () => 1,
+    run: s => (s.penalty > 0
+      ? { ok: true, text: '복도 왁스칠까지 끝냈다. 사감 선생님이 상점 카드에 도장을 꾹.', deltas: { penalty: -6, fame: 3, hp: -3 } }
+      : { ok: true, text: '벌점은 없지만 봉사는 즐겁다. 같이 한 친구들과 친해졌다.', deltas: { soc: 4, fame: 3, hp: -3 } }),
+  },
+  {
+    id: 'rest', name: '자유 시간에 푹 쉬기', emoji: '🛌', risk: false,
+    desc: '아무것도 안 하고 침대와 한 몸 되기', hint: '스트레스 -18, 지능 -3',
+    successChance: () => 1,
+    run: () => ({ ok: true, text: '창밖으로 풍산 들판이 노을에 물든다. 오랜만에 숨이 쉬어진다.', deltas: { stress: -18, int: -3 } }),
   },
 ];
 
-// 방학에는 일반 특별 이벤트 대신 이 중 하나를 고른다
+// 방학에는 특별 활동 대신 방학 계획 하나를 고른다
 const VACATION_OPTIONS = [
-  { id: 'v_study', name: '공부한다', emoji: '✏️', risk: false, desc: '독서실 정기권 끊고 매일 출근', hint: '지능 +20',
-    successChance: () => 1, run: () => ({ ok: true, text: '방학 동안 문제집 세 권을 끝냈다. 개학하면 다들 놀라겠지.', deltas: { int: 20 } }) },
-  { id: 'v_exercise', name: '매일 운동한다', emoji: '🏃‍♂️', risk: false, desc: '아침 러닝 + 동네 헬스장', hint: '체력 +20',
-    successChance: () => 1, run: () => ({ ok: true, text: '동네 둑길을 매일 뛰었다. 계단이 안 무섭다.', deltas: { hp: 20 } }) },
-  { id: 'v_play', name: '친구들과 논다', emoji: '🎮', risk: false, desc: 'PC방, 노래방, 여행까지 풀코스', hint: '사회성 +20, 명성 +5, 지능 -8',
-    successChance: () => 1, run: () => ({ ok: true, text: '여행 브이로그가 학교에서 화제가 됐다. 추억은 쌓였는데 수학 공식이 기억이 안 난다.', deltas: { soc: 20, fame: 5, int: -8 } }) },
+  { id: 'v_study', name: '독서실 출근', emoji: '✏️', risk: false, desc: '독서실 정기권 끊고 매일 출근', hint: '지능 +20, 스트레스 +8',
+    successChance: () => 1, run: () => ({ ok: true, text: '방학 동안 문제집 세 권을 끝냈다. 개학하면 다들 놀라겠지.', deltas: { int: 20, stress: 8 } }) },
+  { id: 'v_camp', name: '기숙학원 특강', emoji: '🏫', risk: false, cost: 10000, desc: '방학에도 기숙사… 이번엔 학원 기숙사다', hint: '지능 +28, 스트레스 +15 (용돈 1만원)',
+    successChance: () => 1, run: () => ({ ok: true, text: '하루 14시간 공부. 방학이 아니라 4학기였다.', deltas: { int: 28, stress: 15 } }) },
+  { id: 'v_exercise', name: '매일 운동', emoji: '🏃‍♂️', risk: false, desc: '아침 러닝 + 동네 헬스장', hint: '체력 +20, 스트레스 -8',
+    successChance: () => 1, run: () => ({ ok: true, text: '동네 둑길을 매일 뛰었다. 계단이 안 무섭다.', deltas: { hp: 20, stress: -8 } }) },
+  { id: 'v_play', name: '친구들과 놀기', emoji: '🎮', risk: false, desc: 'PC방, 노래방, 여행까지 풀코스', hint: '사회성 +20, 명성 +5, 지능 -8, 스트레스 -25',
+    successChance: () => 1, run: () => ({ ok: true, text: '여행 브이로그가 학교에서 화제가 됐다. 추억은 쌓였는데 수학 공식이 기억이 안 난다.', deltas: { soc: 20, fame: 5, int: -8, stress: -25 } }) },
+  { id: 'v_job', name: '편의점 알바', emoji: '🏪', risk: false, desc: '방학 동안 동네 편의점에서 알바', hint: '용돈 +1만 5천원, 체력 -5, 사회성 +4',
+    successChance: () => 1, run: () => ({ ok: true, text: '폐기 삼각김밥의 맛을 알았다. 통장이 두둑해졌다.', deltas: { hp: -5, soc: 4 }, money: 15000 }) },
+  { id: 'v_rest', name: '집에서 푹 쉬기', emoji: '🛋️', risk: false, desc: '엄마 밥 먹고 늦잠 자고 넷플릭스', hint: '스트레스 -40, 체력 +5, 지능 -5, 사회성 -3',
+    successChance: () => 1, run: () => ({ ok: true, text: '기숙사에선 꿈도 못 꾸던 늦잠. 영혼이 회복됐다.', deltas: { stress: -40, hp: 5, int: -5, soc: -3 } }) },
 ];
 
-function getSpecialOptions(s) {
-  return isVacation(s.turn) ? VACATION_OPTIONS : SPECIAL_EVENTS;
-}
+function getSpecialOptions(s) { return isVacation(s.turn) ? VACATION_OPTIONS : SPECIAL_EVENTS; }
 
-// 특별 이벤트 실행 (한 턴에 한 번만)
 function doSpecial(s, eventId) {
   if (s.phase !== 'event' || s.eventDone) return null;
   const ev = getSpecialOptions(s).find(e => e.id === eventId);
-  if (!ev) return null;
+  if (!ev || (ev.cost && s.money < ev.cost)) return null;
   s.eventDone = true;
+  if (ev.cost) s.money -= ev.cost;
 
-  const p = ev.successChance(s);
-  const ok = roll(p);                 // 확률 판정
+  const base = ev.successChance(s);
+  const p = base < 1 ? chanceS(s, base) : 1;   // 스트레스가 높으면 성공률 하락
+  const ok = roll(p);
   const res = ev.run(s, ok);
+  if (res.money) s.money += res.money;
 
-  // 직전 턴과 같은 이벤트를 또 고르면 좋은 효과가 절반 (반복 플레이 방지)
   let repeated = false;
   if (s.lastEvent === ev.id && !isVacation(s.turn)) {
     repeated = true;
     for (const key in res.deltas) {
-      if (res.deltas[key] > 0) res.deltas[key] = Math.round(res.deltas[key] / 2);
+      const good = BAD_KEYS.includes(key) ? res.deltas[key] < 0 : res.deltas[key] > 0;
+      if (good) res.deltas[key] = Math.round(res.deltas[key] / 2);
     }
   }
   s.lastEvent = ev.id;
 
   const real = applyChanges(s, res.deltas);
-  s.result = {
-    kind: 'special', title: ev.emoji + ' ' + ev.name, ok: res.ok, text: res.text,
-    changes: real, repeated: repeated, chance: p,
-  };
-  addLog(s, ev.emoji, `${ev.name} ${res.ok ? '성공' : '실패'}${repeated ? '(반복·효과 반감)' : ''} → ${res.expel ? '퇴학' : (changesToText(real) || '변화 없음')}`);
-
-  if (res.expel) {
-    s.ending = { type: 'expel', reason: '무단외출 적발로 퇴학' };
-    s.phase = 'gameover';
-    return s.result;
-  }
+  s.result = { kind: 'special', title: ev.emoji + ' ' + ev.name, ok: res.ok, text: res.text, changes: real, repeated: repeated, chance: p, cost: ev.cost || 0, money: res.money || 0, bad: res.ok === false || isBad(real) };
+  addLog(s, ev.emoji, `${ev.name} ${res.ok ? '성공' : '실패'}${repeated ? '(반복·효과 반감)' : ''} → ${changesToText(real) || '변화 없음'}`);
+  if (checkPenalty(s)) return s.result;
   s.phase = 'eventResult';
   return s.result;
 }
 
-// ---------- 9. 무작위 학교생활 사건 ----------
-// when(s): 일어날 수 있는 조건, weight(s): 뽑힐 가중치
-// choices: 2~3개 선택지. exp 는 대략적인 기대 변화(화면 힌트 + 자동 시뮬레이션용)
+// ---------- 11. 돌발 사건 (기숙사 · 풍산읍 시골 생활) ----------
 const RANDOM_EVENTS = [
+  {
+    id: 'room_check', title: '🔦 기습 방 검사', text: '밤 10시 반, 사감 선생님이 방문을 벌컥 열었다. "방 검사 하겠다." 사물함엔 몰래 사 둔 컵라면이…',
+    when: () => true, weight: () => 1.4,
+    choices: [
+      { label: '솔직하게 내놓는다', exp: { penalty: 2 },
+        run: () => ({ text: '"솔직하네." 벌점 2점으로 끝났다. 컵라면은 압수.', deltas: { penalty: 2, stress: 3 } }) },
+      { label: '이불 속에 숨긴다', note: '55% 성공', exp: { stress: -3 },
+        run: s => rollS(s, 0.55)
+          ? { text: '사감 선생님이 이불을 들추려다 말았다. 심장이 터질 뻔했다.', deltas: { soc: 3, stress: -3 } }
+          : { text: '이불을 들추자 컵라면 다섯 개가 와르르. 정적.', deltas: { penalty: 6, fame: -3, stress: 8 } } },
+      { label: '룸메 사물함에 슬쩍 넣는다', exp: { soc: -10 },
+        run: () => ({ text: '룸메가 대신 벌점을 받았다. 방 공기가 영하로 떨어졌다.', deltas: { soc: -10, stress: 6 } }) },
+    ],
+  },
+  {
+    id: 'rollcall', title: '⏰ 점호 지각 위기', text: '연등실에서 졸다가 깼다. 점호까지 남은 시간 2분!',
+    when: () => true, weight: () => 1.2,
+    choices: [
+      { label: '계단 세 칸씩 전력 질주', note: '체력 높을수록 성공↑', exp: { hp: -2 },
+        run: s => rollS(s, clamp(0.2 + s.stats.hp * 0.009, 0.15, 0.9))
+          ? { text: '점호 번호 부르기 1초 전 도착! 숨은 턱까지 찼지만 세이프.', deltas: { hp: -2, stress: -2 } }
+          : { text: '복도 끝에서 사감 선생님과 눈이 마주쳤다. 지각 벌점.', deltas: { penalty: 3, stress: 6 } } },
+      { label: '룸메에게 대리 대답 부탁', note: '50% 확률로 둘 다 걸림', exp: { soc: 2 },
+        run: s => rollS(s, 0.5)
+          ? { text: '룸메가 목소리까지 흉내 냈다. 완벽한 팀워크.', deltas: { soc: 4, stress: -3 } }
+          : { text: '"너 지금 두 번 대답했지?" 둘 다 사감실행.', deltas: { penalty: 6, soc: -3, stress: 8 } } },
+    ],
+  },
+  {
+    id: 'sns', title: '📸 SNS에 찍힌 내 모습', text: '누군가 안동 시내 찜닭골목에서 찍은 사진을 올렸다. 사진 구석에… 무단외출하던 네가 있다.',
+    when: s => s.rumorPending, weight: () => 4,
+    choices: [
+      { label: '올린 애한테 내려 달라고 부탁', note: '사회성 높을수록 성공↑', exp: { soc: 2 },
+        run: s => rollS(s, clamp(0.25 + s.stats.soc * 0.008, 0.2, 0.9))
+          ? { text: '"헐 미안, 바로 지울게!" 사감 선생님이 보기 전에 사라졌다.', deltas: { soc: 2, stress: -4 } }
+          : { text: '지워 달라고 하는 사이 이미 캡처가 돌았다. 사감실 호출.', deltas: { penalty: 8, fame: -5, stress: 10 } } },
+      { label: '사감 선생님께 먼저 자수', exp: { penalty: 5, stress: -10 },
+        run: () => ({ text: '"먼저 말해 줘서 고맙다." 벌점은 받았지만 마음은 편하다.', deltas: { penalty: 5, fame: -2, stress: -10 } }) },
+      { label: '모른 척 버틴다', note: '50% 확률로 발각', exp: { stress: 8 },
+        run: s => rollS(s, 0.5)
+          ? { text: '다행히 사진은 금방 묻혔다. 그런데 며칠 내내 잠을 설쳤다.', deltas: { stress: 10 } }
+          : { text: '사감 선생님 폰 화면에 그 사진이 떠 있었다. 끝났다.', deltas: { penalty: 10, fame: -6, stress: 12 } } },
+    ],
+  },
+  {
+    id: 'bus', title: '🚌 복귀 버스를 놓쳤다', text: '귀가 주말 끝, 풍산읍 들어가는 버스가 눈앞에서 떠났다. 다음 버스는 한 시간 뒤. 기숙사 복귀 시간이 다가온다.',
+    when: () => true, weight: () => 1,
+    choices: [
+      { label: '부모님께 SOS', exp: { stress: 6 },
+        run: () => ({ text: '아빠 차를 타고 복귀했다. 가는 내내 성적 이야기를 들었다.', deltas: { stress: 7 } }) },
+      { label: '택시를 탄다', cost: 12000, exp: {},
+        run: () => ({ text: '논밭 사이로 달리는 택시. 미터기 숫자가 무섭게 올라간다.', deltas: { stress: -2 } }) },
+      { label: '논길 따라 뛰어간다', note: '체력 높을수록 성공↑', exp: { hp: 3 },
+        run: s => rollS(s, clamp(0.15 + s.stats.hp * 0.008, 0.1, 0.85))
+          ? { text: '해 지는 들판을 가로질러 복귀 1분 전 도착. 소문이 나서 별명이 생겼다.', deltas: { hp: 4, fame: 4 } }
+          : { text: '중간에 길을 잃었다. 고라니와 눈이 마주쳤다. 복귀 지각 벌점.', deltas: { penalty: 4, hp: -6, stress: 6 } } },
+    ],
+  },
+  {
+    id: 'deer', title: '🦌 운동장에 고라니가!', text: '야간 자율학습 시간, 운동장에 고라니 한 마리가 뛰어들었다. 전교생이 창문에 매달렸다.',
+    when: () => true, weight: () => 0.8,
+    choices: [
+      { label: '몰래 폰 꺼내 영상 찍기', note: '50% 확률로 폰 압수', exp: { fame: 4 },
+        run: s => rollS(s, 0.5)
+          ? { text: '영상이 학교 단톡방을 넘어 지역 커뮤니티까지 퍼졌다. "풍산고 고라니"', deltas: { fame: 9, stress: -6 } }
+          : { text: '찍는 순간 감독 선생님 손이 어깨에. 폰 압수.', deltas: { penalty: 3, stress: 5 } } },
+      { label: '못 본 척 자습 계속', exp: { int: 4 },
+        run: () => ({ text: '고라니보다 수학 문제가 더 무서웠다.', deltas: { int: 4, stress: 2 } }) },
+    ],
+  },
+  {
+    id: 'wifi', title: '📶 기숙사 와이파이 먹통', text: '시골 학교의 숙명. 오늘 밤 기숙사 와이파이가 완전히 죽었다.',
+    when: () => true, weight: () => 0.9,
+    choices: [
+      { label: '이참에 공부한다', exp: { int: 5, soc: -2 },
+        run: () => ({ text: '인터넷이 없으니 집중이 잘 된다. 슬프게도.', deltas: { int: 5, soc: -2 } }) },
+      { label: '옆방에 놀러 간다', note: '30% 확률로 순찰에 걸림', exp: { soc: 6, stress: -8 },
+        run: s => rollS(s, 0.7)
+          ? { text: '보드게임 판이 벌어졌다. 와이파이 없는 밤이 이렇게 재밌다니.', deltas: { soc: 6, stress: -8 } }
+          : { text: '순찰 돌던 사감 선생님께 딱 걸렸다. 타 호실 출입 벌점.', deltas: { penalty: 3, soc: 2, stress: 5 } } },
+    ],
+  },
+  {
+    id: 'bug', title: '🪲 방에 정체불명의 벌레', text: '논밭 한가운데 학교의 흔한 밤. 손바닥만 한 벌레가 천장에 붙어 있다.',
+    when: () => true, weight: () => 0.7,
+    choices: [
+      { label: '룸메와 합동 작전', exp: { soc: 5, stress: -3 },
+        run: () => ({ text: '30분의 사투 끝에 창밖으로 돌려보냈다. 전우애가 생겼다.', deltas: { soc: 5, stress: -3 } }) },
+      { label: '비명 지르며 복도로 탈출', exp: { fame: -3, soc: 2 },
+        run: () => ({ text: '층 전체가 깼다. 다음 날 별명이 생겼다.', deltas: { fame: -3, soc: 2, stress: 3 } }) },
+      { label: '무시하고 잔다', exp: { stress: 6 },
+        run: () => ({ text: '눈을 감아도 날개 소리가 들리는 것 같다. 한숨도 못 잤다.', deltas: { stress: 7, hp: -3 } }) },
+    ],
+  },
+  {
+    id: 'homesick', title: '🏠 향수병', text: '엄마 밥이 너무 먹고 싶다. 기숙사 천장만 멍하니 바라보는 밤.',
+    when: s => gradeOf(s.turn) === 1, weight: () => 1.3,
+    choices: [
+      { label: '부모님께 전화한다', exp: { stress: -8 },
+        run: () => ({ text: '"밥은 잘 먹고 다니니?" 그 한마디에 눈물이 핑 돌았다.', deltas: { stress: -9 } }) },
+      { label: '룸메와 몰래 라면 끓이기 (취사 금지)', note: '30% 확률로 걸림', exp: { soc: 6, stress: -10 },
+        run: s => rollS(s, 0.7)
+          ? { text: '전기포트 라면이 이렇게 맛있을 줄이야. 룸메와 급속도로 친해졌다.', deltas: { soc: 6, stress: -12 } }
+          : { text: '라면 냄새가 복도를 타고 사감실까지. 전기포트 압수에 벌점.', deltas: { penalty: 4, stress: 4 } } },
+      { label: '꾹 참고 공부한다', exp: { int: 4, stress: 8 },
+        run: () => ({ text: '마음을 다잡고 책을 폈지만, 글자가 자꾸 흐려졌다.', deltas: { int: 4, stress: 8 } }) },
+    ],
+  },
+  {
+    id: 'phone', title: '📱 몰래 쓰던 폰 압수', text: '제출 안 한 두 번째 폰으로 새벽에 유튜브를 보다가 사감 선생님과 눈이 마주쳤다.',
+    when: () => true, weight: () => 0.8,
+    choices: [
+      { label: '반성문을 쓴다', exp: { penalty: 2, soc: -3 },
+        run: () => ({ text: 'A4 두 장을 꽉 채웠다. 단톡방 소식은 하나도 모르게 됐다.', deltas: { penalty: 2, soc: -3, stress: 4 } }) },
+      { label: '"이거 공기계예요!" 우긴다', note: '35% 성공', exp: { stress: 4 },
+        run: s => rollS(s, 0.35)
+          ? { text: '사감 선생님이 한숨을 쉬며 그냥 돌려줬다. 기적이다.', deltas: { soc: 3, stress: -3 } }
+          : { text: '거짓말까지 들켰다. 벌점이 두 배.', deltas: { penalty: 6, fame: -3, stress: 6 } } },
+    ],
+  },
+  {
+    id: 'chuseok', title: '🌕 추석 연휴 귀가', text: '추석 연휴! 친척들이 모였다. 그리고 시작된 질문 공세. "몇 등 하니?"',
+    when: s => periodOf(s.turn) === 4, weight: () => 3,
+    choices: [
+      { label: '웃으며 용돈 받고 쉬기', exp: { stress: -12 },
+        run: () => ({ text: '"기숙사 생활 힘들지?" 큰아버지가 봉투를 쥐여 주셨다.', deltas: { stress: -12 }, money: 10000 }) },
+      { label: '사촌들과 밤새 놀기', exp: { soc: 5, stress: -15 },
+        run: () => ({ text: '윷놀이에서 사촌 동생한테 졌다. 그래도 즐거웠다.', deltas: { soc: 5, stress: -15 }, money: 5000 }) },
+      { label: '연휴에도 공부', exp: { int: 6, stress: 4 },
+        run: () => ({ text: '송편 먹으면서 단어장을 넘겼다. 친척들이 감탄했다.', deltas: { int: 6, stress: 4 }, money: 5000 }) },
+    ],
+  },
+  {
+    id: 'parents_meeting', title: '👨‍👩‍👧 학부모 상담 주간', text: '부모님이 담임 선생님을 만나러 학교에 오셨다. 상담실 문이 닫혔다…',
+    when: s => periodOf(s.turn) === 2 && s.exams.length > 0, weight: () => 3,
+    choices: [
+      { label: '복도에서 초조하게 기다린다', note: '최근 시험이 2등급 이내면 좋은 결과', exp: {},
+        run: s => (s.exams[s.exams.length - 1].grade <= 2
+          ? { text: '"요즘 정말 열심히 한대!" 부모님 얼굴이 환하다. 외식에 용돈까지.', deltas: { stress: -10, fame: 3 }, money: 5000 }
+          : { text: '상담실에서 나온 부모님 표정이 어둡다. 저녁 내내 잔소리.', deltas: { stress: 12 } }) },
+      { label: '상담 전에 선생님께 잘 보이기', exp: { int: 3, soc: 3 },
+        run: () => ({ text: '교무실에 커피를 갖다드렸다. 담임 선생님이 좋은 말을 해 주신 것 같다.', deltas: { int: 3, soc: 3, stress: 3 } }) },
+    ],
+  },
+  {
+    id: 'timecapsule', title: '⏳ 타임캡슐 개봉식', text: '9기 선배들의 타임캡슐 개봉식. 나도 3년 뒤의 나에게 편지를 쓰기로 했다.',
+    when: s => periodOf(s.turn) === 4, weight: () => 0.8,
+    choices: [
+      { label: '진지하게 편지를 쓴다', exp: { stress: -8, int: 2 },
+        run: () => ({ text: '"3년 뒤의 나, 잘 버텼니?" 쓰다 보니 마음이 단단해졌다.', deltas: { stress: -8, int: 2 } }) },
+      { label: '장난 편지를 쓴다', exp: { soc: 4, fame: 2 },
+        run: () => ({ text: '"미래의 나야, 로또 번호 알려 줘." 친구들이 배를 잡고 웃었다.', deltas: { soc: 4, fame: 2 } }) },
+    ],
+  },
+  {
+    id: 'plogging', title: '🌱 수능날 플로깅', text: '선배들이 수능 보는 날. 1·2학년은 풍산읍 일대를 돌며 플로깅을 한다.',
+    when: s => periodOf(s.turn) === 5 && gradeOf(s.turn) < 3, weight: () => 1.5,
+    choices: [
+      { label: '열심히 쓰레기를 줍는다', exp: { fame: 4, hp: 3 },
+        run: () => ({ text: '풍산 시장 앞 할머니들이 "학생들 착하다"며 귤을 주셨다.', deltas: { fame: 4, hp: 3, stress: -4 } }) },
+      { label: '선배들 응원 문자를 돌린다', exp: { soc: 5 },
+        run: () => ({ text: '"선배 수능 대박!" 내년엔 내가 받을 차례다.', deltas: { soc: 5, stress: -3 } }) },
+    ],
+  },
   {
     id: 'perf', title: '📝 기습 수행평가', text: '"다음 주까지 발표 준비해 오세요~" 일정표엔 없던 수행평가다.',
     when: () => true, weight: () => 1,
     choices: [
-      { label: '밤새워 혼자 준비', exp: { int: 8, hp: -7 },
-        run: () => ({ text: '완벽한 PPT 완성. 대신 다크서클이 턱까지 내려왔다.', deltas: { int: 8, hp: -7 } }) },
+      { label: '밤새워 혼자 준비', exp: { int: 8, hp: -7, stress: 8 },
+        run: () => ({ text: '완벽한 PPT 완성. 대신 다크서클이 턱까지 내려왔다.', deltas: { int: 8, hp: -7, stress: 8 } }) },
       { label: '친구들과 역할 분담', note: '사회성 높을수록 성공↑', exp: { int: 4, soc: 3 },
-        run: s => roll(clamp(0.5 + (s.stats.soc - 50) * 0.008, 0.2, 0.9))
+        run: s => rollS(s, clamp(0.5 + (s.stats.soc - 50) * 0.008, 0.2, 0.9))
           ? { text: '각자 맡은 부분을 척척! 팀플의 정석.', deltas: { int: 5, soc: 6 } }
-          : { text: '자료조사 맡은 애가 잠수탔다… 결국 혼자 다 했다.', deltas: { int: 3, soc: -6, hp: -3 } } },
-      { label: '대충 내고 쉰다', exp: { fame: -5, hp: 4 },
-        run: () => ({ text: '선생님의 실망한 눈빛이 오래 기억에 남는다.', deltas: { fame: -5, hp: 4 } }) },
+          : { text: '자료조사 맡은 애가 잠수탔다… 결국 혼자 다 했다.', deltas: { int: 3, soc: -6, hp: -3, stress: 10 } } },
+      { label: '대충 내고 쉰다', exp: { fame: -5, stress: -5 },
+        run: () => ({ text: '선생님의 실망한 눈빛이 오래 기억에 남는다.', deltas: { fame: -5, hp: 4, stress: -5 } }) },
     ],
   },
   {
     id: 'sports', title: '🏃 체육대회', text: '반 티 맞춰 입고 운동장 집합! 계주 대표를 뽑는다.',
-    when: () => true, weight: () => 1,
+    when: s => periodOf(s.turn) <= 2, weight: () => 1.2,
     choices: [
       { label: '계주 대표로 뛴다', note: '체력 높을수록 성공↑', exp: { fame: 5, hp: -5 },
-        run: s => roll(clamp(0.3 + s.stats.hp * 0.007, 0.2, 0.9))
-          ? { text: '마지막 코너에서 두 명 제쳤다! 반 전체가 이름을 연호한다.', deltas: { fame: 10, soc: 4, hp: -4 } }
-          : { text: '바통을 떨어뜨렸다… 그래도 끝까지 뛰었다.', deltas: { fame: -4, hp: -6 } } },
+        run: s => rollS(s, clamp(0.3 + s.stats.hp * 0.007, 0.2, 0.9))
+          ? { text: '마지막 코너에서 두 명 제쳤다! 반 전체가 이름을 연호한다.', deltas: { fame: 10, soc: 4, hp: -4, stress: -6 } }
+          : { text: '바통을 떨어뜨렸다… 그래도 끝까지 뛰었다.', deltas: { fame: -4, hp: -6, stress: 6 } } },
       { label: '응원단장 맡기', exp: { soc: 7, fame: 3, hp: -3 },
-        run: () => ({ text: '목이 쉬도록 응원했다. 반 단합력 최고!', deltas: { soc: 7, fame: 3, hp: -3 } }) },
+        run: () => ({ text: '목이 쉬도록 응원했다. 반 단합력 최고!', deltas: { soc: 7, fame: 3, hp: -3, stress: -4 } }) },
       { label: '스탠드에서 쉬기', exp: { hp: 6, soc: -5 },
         run: () => ({ text: '그늘에서 꿀잠. 반 단톡방에선 "쟤 어디 갔냐"는 말이…', deltas: { hp: 6, soc: -5 } }) },
     ],
   },
   {
-    id: 'conflict', title: '😤 친구와의 갈등', text: '사소한 오해로 단짝과 3일째 말을 안 하고 있다.',
+    id: 'conflict', title: '😤 룸메이트와의 갈등', text: '같은 방 3년 차의 위기. 사소한 오해로 룸메와 3일째 말을 안 하고 있다. 같은 방이라 피할 곳도 없다.',
     when: () => true, weight: () => 1,
     choices: [
-      { label: '먼저 사과한다', exp: { soc: 5 },
-        run: () => ({ text: '"나도 미안" 한마디에 바로 풀렸다. 매점 빵은 네가 쐈다.', deltas: { soc: 5 } }) },
+      { label: '먼저 사과한다', exp: { soc: 5, stress: -4 },
+        run: () => ({ text: '"나도 미안" 한마디에 바로 풀렸다. 매점 빵은 네가 쐈다.', deltas: { soc: 5, stress: -5 } }) },
       { label: '진지하게 대화한다', note: '사회성 높을수록 성공↑', exp: { soc: 3 },
-        run: s => roll(clamp(0.35 + s.stats.soc * 0.006, 0.2, 0.9))
-          ? { text: '서로 속마음을 털어놨다. 오히려 더 친해졌다.', deltas: { soc: 10 } }
-          : { text: '대화가 말싸움이 됐다. 반 분위기까지 냉랭…', deltas: { soc: -8 } } },
+        run: s => rollS(s, clamp(0.35 + s.stats.soc * 0.006, 0.2, 0.9))
+          ? { text: '서로 속마음을 털어놨다. 오히려 더 친해졌다.', deltas: { soc: 10, stress: -8 } }
+          : { text: '대화가 말싸움이 됐다. 방에 들어가기가 싫다.', deltas: { soc: -8, stress: 12 } } },
       { label: '신경 끄고 공부만', exp: { int: 5, soc: -8 },
-        run: () => ({ text: '문제집은 잘 풀렸지만 점심을 혼자 먹었다.', deltas: { int: 5, soc: -8 } }) },
+        run: () => ({ text: '문제집은 잘 풀렸지만 방에서 숨 쉬는 것도 눈치 보인다.', deltas: { int: 5, soc: -8, stress: 8 } }) },
     ],
   },
   {
     id: 'praise', title: '👏 선생님의 칭찬', text: '수업 시간에 한 질문이 날카롭다며 선생님이 반 전체 앞에서 칭찬했다.',
-    when: () => true, weight: s => (s.stats.int >= 60 ? 2 : 0.6),
+    when: () => true, weight: s => (s.stats.int >= 60 ? 1.5 : 0.4),
     choices: [
       { label: '겸손하게 감사드린다', exp: { fame: 5, soc: 2 },
-        run: () => ({ text: '"역시 겸손하네" 평판이 쌓였다.', deltas: { fame: 5, soc: 2 } }) },
+        run: () => ({ text: '"역시 겸손하네" 평판이 쌓였다.', deltas: { fame: 5, soc: 2, stress: -3 } }) },
       { label: '반 단톡에 자랑한다', exp: { fame: 4, soc: -3 },
         run: () => roll(0.5)
           ? { text: '다들 "ㅊㅋㅊㅋ" 해 줬다. 소문이 옆 반까지!', deltas: { fame: 9 } }
@@ -679,142 +1067,90 @@ const RANDOM_EVENTS = [
     ],
   },
   {
-    id: 'mistake', title: '😱 시험에서의 실수', text: '지난 시험 OMR을 한 칸씩 밀려 쓴 걸 이제야 알았다.',
-    when: s => s.exams.length > 0, weight: () => 1,
+    id: 'mistake', title: '😱 OMR 밀려 쓰기', text: '지난 시험 OMR을 한 칸씩 밀려 쓴 걸 이제야 알았다.',
+    when: s => s.exams.length > 0, weight: () => 0.7,
     choices: [
       { label: '오답노트 정리', exp: { int: 7, hp: -4 },
-        run: () => ({ text: '틀린 이유를 하나하나 정리했다. 같은 실수는 두 번 없다.', deltas: { int: 7, hp: -4 } }) },
+        run: () => ({ text: '틀린 이유를 하나하나 정리했다. 같은 실수는 두 번 없다.', deltas: { int: 7, hp: -4, stress: 3 } }) },
       { label: '담임 선생님과 상담', exp: { int: 3, fame: 3 },
-        run: () => ({ text: '"실수도 실력이지만, 너 가능성 있다." 힘이 났다.', deltas: { int: 3, fame: 3 } }) },
+        run: () => ({ text: '"실수도 실력이지만, 너 가능성 있다." 힘이 났다.', deltas: { int: 3, fame: 3, stress: -6 } }) },
       { label: '잊고 친구들이랑 논다', exp: { soc: 5, int: -5 },
-        run: () => ({ text: '기분은 풀렸는데 다음 시험 범위가 두 배로 느껴진다.', deltas: { soc: 5, int: -5 } }) },
+        run: () => ({ text: '기분은 풀렸는데 다음 시험 범위가 두 배로 느껴진다.', deltas: { soc: 5, int: -5, stress: -6 } }) },
     ],
   },
   {
-    id: 'club', title: '🧩 동아리 활동', text: '이번 달 동아리 활동 주간. 뭘 하지?',
-    when: () => true, weight: () => 1,
-    choices: [
-      { label: '밤새 활동 보고서 완성', exp: { int: 6, soc: 4, hp: -6 },
-        run: () => ({ text: '부원들과 밤새 보고서를 끝냈다. 졸리지만 뿌듯하다.', deltas: { int: 6, soc: 4, hp: -6 } }) },
-      { label: '동아리 발표회 준비', exp: { fame: 6, soc: 5, hp: -5 },
-        run: () => ({ text: '점심마다 동아리실 행. 발표회 포스터에 내 이름이!', deltas: { fame: 6, soc: 5, hp: -5 } }) },
-      { label: '동아리 째고 낮잠', exp: { hp: 6, soc: -4, fame: -2 },
-        run: () => ({ text: '꿀잠 잤다. 부장이 단톡방에 내 이름을 태그했다.', deltas: { hp: 6, soc: -4, fame: -2 } }) },
-    ],
-  },
-  {
-    id: 'dorm', title: '🛏️ 기숙사 생활 문제', text: '룸메이트의 코골이가 탱크 소리 수준이다. 3일째 잠을 못 잤다.',
-    when: () => true, weight: () => 1,
-    choices: [
-      { label: '매점에서 귀마개 산다', cost: 3000, exp: { hp: 6 },
-        run: () => ({ text: '세상이 이렇게 조용했구나. 숙면 성공.', deltas: { hp: 6 } }) },
-      { label: '룸메와 이야기한다', note: '사회성 높을수록 성공↑', exp: { soc: 2, hp: 1 },
-        run: s => roll(clamp(0.4 + s.stats.soc * 0.006, 0.2, 0.9))
-          ? { text: '룸메가 미안하다며 코골이 테이프를 붙이기 시작했다.', deltas: { soc: 6, hp: 4 } }
-          : { text: '"내가 언제 코를 골아?" 방 분위기만 어색해졌다.', deltas: { soc: -5, hp: -4 } } },
-      { label: '그냥 참는다', exp: { hp: -7 },
-        run: () => ({ text: '수업 시간에 꾸벅꾸벅… 체력이 바닥난다.', deltas: { hp: -7 } }) },
-    ],
-  },
-  {
-    id: 'cold', title: '🤧 감기', text: '환절기 기숙사 감기가 돌더니 결국 나도 걸렸다.',
-    when: () => true, weight: s => (s.stats.hp < 40 ? 3 : 0.8),   // 체력이 낮으면 더 잘 걸린다
+    id: 'cold', title: '🤧 기숙사 감기 대란', text: '한 방에서 시작된 감기가 기숙사 한 층을 휩쓸었다. 결국 나도 걸렸다.',
+    when: () => true, weight: s => (s.stats.hp < 40 ? 2.5 : 0.7),
     choices: [
       { label: '보건실에서 푹 쉰다', exp: { hp: 6, int: -5 },
-        run: () => ({ text: '이틀을 푹 쉬었다. 대신 진도를 놓쳤다.', deltas: { hp: 6, int: -5 } }) },
+        run: () => ({ text: '이틀을 푹 쉬었다. 대신 진도를 놓쳤다.', deltas: { hp: 6, int: -5, stress: 3 } }) },
       { label: '약 사 먹고 버틴다', cost: 4000, exp: { hp: 3 },
         run: () => ({ text: '약 기운으로 버텼다. 지갑은 가벼워졌다.', deltas: { hp: 3 } }) },
       { label: '참고 연등까지 간다', exp: { hp: -10, int: 4 },
-        run: () => ({ text: '콧물 휴지가 책상 위에 산처럼 쌓였다…', deltas: { hp: -10, int: 4 } }) },
+        run: () => ({ text: '콧물 휴지가 책상 위에 산처럼 쌓였다…', deltas: { hp: -10, int: 4, stress: 6 } }) },
     ],
   },
   {
-    id: 'festival', title: '🎉 학교 축제', text: '1년에 한 번, 풍산 축제의 날이 밝았다!',
+    id: 'snack', title: '🍗 점호 후 몰래 야식', text: '"치킨 시켰다. 담장 쪽으로 받으러 갈 사람?" 방 친구들이 너를 본다. (배달은 학교 앞 논길까지만 온다)',
     when: () => true, weight: () => 1,
     choices: [
-      { label: '반 부스 운영', exp: { soc: 7, fame: 4, hp: -5 },
-        run: () => ({ text: '반 부스 떡꼬치 완판! 손목은 나갔지만 다들 웃었다.', deltas: { soc: 7, fame: 4, hp: -5 } }) },
-      { label: '무대 공연 신청', note: '명성·사회성 높을수록 성공↑', exp: { fame: 4 },
-        run: s => roll(clamp(0.3 + s.stats.fame * 0.004 + s.stats.soc * 0.003, 0.2, 0.9))
-          ? { text: '앵콜이 터졌다! 축제의 주인공은 너.', deltas: { fame: 12, soc: 4 } }
-          : { text: '마이크가 하울링… 웃음거리가 됐다.', deltas: { fame: -7 } } },
-      { label: '구경만 한다', exp: { soc: 3, hp: 2 },
-        run: () => ({ text: '솜사탕 들고 여유롭게 한 바퀴. 이것도 추억.', deltas: { soc: 3, hp: 2 } }) },
-    ],
-  },
-  {
-    id: 'snack', title: '🍗 점호 후 몰래 야식', text: '"치킨 시켰다. 담장 쪽으로 받으러 갈 사람?" 방 친구들이 너를 본다.',
-    when: () => true, weight: () => 0.8,
-    choices: [
-      { label: '같이 먹는다', note: '25% 확률로 사감실 호출', exp: { soc: 4, fame: -2 },
-        run: () => roll(0.75)
-          ? { text: '이불 속 치킨 파티. 우정이 바삭해졌다.', deltas: { soc: 9, hp: 2 } }
-          : { text: '치킨 냄새가 복도까지… 사감실 호출, 반성문 3장.', deltas: { fame: -10, soc: 2 } } },
+      { label: '내가 받으러 간다', note: '30% 확률로 사감실 호출', exp: { soc: 6, stress: -8 },
+        run: s => rollS(s, 0.7)
+          ? { text: '이불 속 치킨 파티. 우정이 바삭해졌다. 다들 너를 영웅이라 부른다.', deltas: { soc: 10, fame: 2, stress: -10 } }
+          : { text: '담장 앞에서 순찰 손전등에 딱. 치킨은 압수, 벌점은 너만.', deltas: { penalty: 5, fame: -4, stress: 8 } } },
       { label: '정중히 거절하고 잔다', exp: { hp: 4, soc: -4 },
         run: () => ({ text: '꿀잠 잤다. 아침에 뼈만 남은 박스를 봤다.', deltas: { hp: 4, soc: -4 } }) },
     ],
   },
   {
-    id: 'parcel', title: '📦 집에서 온 택배', text: '부모님이 간식 박스와 용돈 봉투를 보내 주셨다!',
-    when: () => true, weight: () => 0.7,
+    id: 'parcel', title: '📦 집에서 온 택배', text: '부모님이 간식 박스와 용돈 봉투를 기숙사로 보내 주셨다!',
+    when: () => true, weight: () => 0.6,
     choices: [
       { label: '방 친구들과 나눠 먹는다', money: 5000, exp: { soc: 5 },
-        run: () => ({ text: '방이 순식간에 잔치 분위기. 용돈 5천원도 챙겼다.', deltas: { soc: 5 }, money: 5000 }) },
+        run: () => ({ text: '방이 순식간에 잔치 분위기. 용돈 5천원도 챙겼다.', deltas: { soc: 5, stress: -5 }, money: 5000 }) },
       { label: '아껴 두고 혼자 먹는다', money: 5000, exp: { hp: 4 },
-        run: () => ({ text: '야금야금 아껴 먹었다. 용돈 5천원도 챙겼다.', deltas: { hp: 4 }, money: 5000 }) },
+        run: () => ({ text: '야금야금 아껴 먹었다. 용돈 5천원도 챙겼다.', deltas: { hp: 4, stress: -3 }, money: 5000 }) },
     ],
   },
-  // ----- 능력치 조건이 있는 특별 사건들 -----
   {
     id: 'council', title: '🏛️ 학생회 임원 제안', text: '명성이 자자한 너에게 학생회장이 직접 찾아왔다. "같이 학생회 해 볼래?"',
-    when: s => s.stats.fame >= 65, weight: () => 1.5,
+    when: s => s.stats.fame >= 65 && !s.president, weight: () => 1,
     choices: [
       { label: '수락한다', exp: { fame: 10, soc: 5, int: -6, hp: -4 },
-        run: () => ({ text: '회의, 행사, 회의… 바쁘지만 학교가 내 손으로 돌아간다.', deltas: { fame: 10, soc: 5, int: -6, hp: -4 } }) },
+        run: () => ({ text: '회의, 행사, 회의… 바쁘지만 학교가 내 손으로 돌아간다.', deltas: { fame: 10, soc: 5, int: -6, hp: -4, stress: 6 } }) },
       { label: '공부에 집중하겠다며 거절', exp: { int: 4 },
         run: () => ({ text: '아쉽지만 지금은 내 페이스가 중요하다.', deltas: { int: 4 } }) },
     ],
   },
   {
-    id: 'interview', title: '📰 교내 신문 인터뷰', text: '교지편집부가 "요즘 핫한 학생" 코너에 너를 싣고 싶다고 한다.',
-    when: s => s.stats.fame >= 60, weight: () => 1,
-    choices: [
-      { label: '인터뷰에 응한다', exp: { fame: 6, soc: 3 },
-        run: () => ({ text: '사진이 생각보다 잘 나왔다. 후배들이 알아본다.', deltas: { fame: 6, soc: 3 } }) },
-      { label: '부끄러워서 사양', exp: { int: 3 },
-        run: () => ({ text: '그 시간에 단어나 외웠다.', deltas: { int: 3 } }) },
-    ],
-  },
-  {
     id: 'contest', title: '🏅 경시대회 추천', text: '수학 선생님이 교외 경시대회 대표로 너를 추천했다.',
-    when: s => s.stats.int >= 70, weight: () => 1.5,
+    when: s => s.stats.int >= 70, weight: () => 1.2,
     choices: [
       { label: '출전한다', note: '지능 높을수록 성공↑', exp: { fame: 5, hp: -3 },
-        run: s => roll(clamp((s.stats.int - 30) * 0.012, 0.2, 0.85))
-          ? { text: '은상 수상! 조회 시간에 단상에 올라갔다.', deltas: { fame: 14, int: 3 } }
-          : { text: '마지막 문제에서 시간이 부족했다. 다음엔 꼭…', deltas: { fame: -4, hp: -6 } } },
+        run: s => rollS(s, clamp((s.stats.int - 30) * 0.012, 0.2, 0.85))
+          ? { text: '은상 수상! 조회 시간에 단상에 올라갔다.', deltas: { fame: 14, int: 3, stress: -5 } }
+          : { text: '마지막 문제에서 시간이 부족했다. 다음엔 꼭…', deltas: { fame: -4, hp: -6, stress: 8 } } },
       { label: '정중히 사양한다', exp: { hp: 3 },
         run: () => ({ text: '무리하지 않기로 했다.', deltas: { hp: 3 } }) },
     ],
   },
   {
-    id: 'slump', title: '😵 번아웃 슬럼프', text: '아무것도 하기 싫다. 책을 펴도 글자가 눈에 안 들어온다.',
-    when: s => s.stats.hp < 35 || Math.min(s.stats.int, s.stats.soc, s.stats.fame) < 30, weight: () => 1.5,
+    id: 'slump', title: '😵 슬럼프', text: '아무것도 하기 싫다. 책을 펴도 글자가 눈에 안 들어온다.',
+    when: s => s.stress >= 65 || s.stats.hp < 35, weight: () => 2,
     choices: [
-      { label: '하루 통째로 쉰다', exp: { hp: 8, int: -4, fame: -2 },
-        run: () => ({ text: '푹 자고 일어나니 좀 살 것 같다.', deltas: { hp: 8, int: -4, fame: -2 } }) },
-      { label: '친구들과 수다 떤다', exp: { soc: 6, hp: 3, int: -3 },
-        run: () => ({ text: '"나만 힘든 게 아니었구나." 마음이 가벼워졌다.', deltas: { soc: 6, hp: 3, int: -3 } }) },
-      { label: '억지로 버틴다', exp: { int: 3, hp: -6 },
-        run: () => ({ text: '버티긴 했는데… 몸이 무겁다.', deltas: { int: 3, hp: -6 } }) },
+      { label: '하루 통째로 쉰다', exp: { hp: 8, int: -4, stress: -12 },
+        run: () => ({ text: '푹 자고 일어나니 좀 살 것 같다.', deltas: { hp: 8, int: -4, fame: -2, stress: -12 } }) },
+      { label: '친구들과 수다 떤다', exp: { soc: 6, stress: -10 },
+        run: () => ({ text: '"나만 힘든 게 아니었구나." 마음이 가벼워졌다.', deltas: { soc: 6, hp: 3, int: -3, stress: -10 } }) },
+      { label: '억지로 버틴다', exp: { int: 3, hp: -6, stress: 8 },
+        run: () => ({ text: '버티긴 했는데… 몸이 무겁다.', deltas: { int: 3, hp: -6, stress: 8 } }) },
     ],
   },
   {
-    // 몰빵 플레이에 대한 불이익: 가장 높은 능력치와 낮은 능력치 차이가 크면 자주 발생
     id: 'imbalance', title: '⚖️ 한쪽으로 치우친 생활',
     text: '한 가지에만 매달린 생활에 주변에서 걱정하기 시작했다. "너 요즘 좀 이상해."',
     when: s => maxStatKey(s) !== minStatKey(s) && s.stats[maxStatKey(s)] - s.stats[minStatKey(s)] >= 35,
-    weight: () => 3,
+    weight: () => 2.5,
     choices: [
       { label: '부족한 쪽에 시간을 쓴다', exp: { _low: 8, _high: -6 },
         run: s => ({ text: '균형을 되찾으려 노력했다. 잘하던 쪽은 조금 녹슬었다.', deltas: { [minStatKey(s)]: 8, [maxStatKey(s)]: -6 } }) },
@@ -827,12 +1163,11 @@ const RANDOM_EVENTS = [
 function maxStatKey(s) { return STATS.reduce((a, b) => (s.stats[b] > s.stats[a] ? b : a)); }
 function minStatKey(s) { return STATS.reduce((a, b) => (s.stats[b] < s.stats[a] ? b : a)); }
 
-// 특별 이벤트 결과를 본 뒤: 무작위 사건이 일어날지 판정
 function afterEventResult(s) {
   if (s.phase !== 'eventResult') return;
   s.result = null;
   if (roll(CONFIG.RANDOM_EVENT_CHANCE)) {
-    const pool = RANDOM_EVENTS.filter(e => e.when(s));
+    const pool = RANDOM_EVENTS.filter(e => e.when(s) && e.id !== s.lastRandom);
     const idx = pickWeightedIndex(pool.map(e => e.weight(s)));
     s.pendingRandom = pool[idx].id;
     s.phase = 'random';
@@ -840,9 +1175,7 @@ function afterEventResult(s) {
     goExamOrEnd(s);
   }
 }
-
 function getPendingRandom(s) { return RANDOM_EVENTS.find(e => e.id === s.pendingRandom) || null; }
-
 function canChoose(s, choice) { return !choice.cost || s.money >= choice.cost; }
 
 function chooseRandom(s, choiceIndex) {
@@ -853,44 +1186,43 @@ function chooseRandom(s, choiceIndex) {
   if (choice.cost) s.money -= choice.cost;
   const res = choice.run(s);
   if (res.money) s.money += res.money;
+  if (ev.id === 'sns') s.rumorPending = false;
+  s.lastRandom = ev.id;
   const real = applyChanges(s, res.deltas);
-  s.result = { kind: 'random', title: ev.title, text: res.text, changes: real, choice: choice.label, cost: choice.cost || 0, money: res.money || 0 };
+  s.result = { kind: 'random', title: ev.title, text: res.text, changes: real, choice: choice.label, cost: choice.cost || 0, money: res.money || 0, bad: isBad(real) };
   addLog(s, ev.title.split(' ')[0], `${ev.title.slice(ev.title.indexOf(' ') + 1)}: '${choice.label}' → ${changesToText(real) || '변화 없음'}`);
   s.pendingRandom = null;
+  if (checkPenalty(s)) return s.result;
   s.phase = 'randomResult';
   return s.result;
 }
-
 function afterRandomResult(s) {
   if (s.phase !== 'randomResult') return;
   s.result = null;
   goExamOrEnd(s);
 }
-
 function goExamOrEnd(s) {
   if (isExamTurn(s.turn) && !s.examTaken) s.phase = 'exam';
   else endTurn(s);
 }
 
-// ---------- 10. 시험 ----------
-// 시험 실력 = 지능 - 체력 페널티. 여기에 운(-25~+25)을 더해 등급 결정
+// ---------- 12. 시험 (+ 라이벌) ----------
+// 시험 실력 = 지능 - 체력 페널티 - 스트레스 페널티
 function examPower(s) {
   let power = s.stats.int;
-  if (s.stats.hp < 40) power -= (40 - s.stats.hp);   // 체력이 낮으면 집중력 저하
+  if (s.stats.hp < 40) power -= (40 - s.stats.hp);
+  if (s.stress >= CONFIG.STRESS_HIGH) power -= Math.round((s.stress - CONFIG.STRESS_HIGH + 10) / 2);
   return power;
 }
 const EXAM_LUCK = 25;
-const GRADE_CUT = [85, 70, 55, 40];   // 1등급 85 이상, 2등급 70 이상 ...
-const GRADE_FAME = { 1: 15, 2: 10, 3: 5, 4: 0, 5: -10 };
+const GRADE_CUT = [85, 70, 55, 40];
+const GRADE_FAME = { 1: 10, 2: 6, 3: 3, 4: 0, 5: -8 };
+const GRADE_STRESS = { 1: -10, 2: -5, 3: 3, 4: 8, 5: 15 };
 
 function scoreToGrade(score) {
-  for (let i = 0; i < GRADE_CUT.length; i++) {
-    if (score >= GRADE_CUT[i]) return i + 1;
-  }
+  for (let i = 0; i < GRADE_CUT.length; i++) if (score >= GRADE_CUT[i]) return i + 1;
   return 5;
 }
-
-// 지금 능력치로 각 등급이 나올 확률 (화면에 보여주기용)
 function gradeOdds(s) {
   const odds = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   const power = examPower(s);
@@ -898,47 +1230,60 @@ function gradeOdds(s) {
   for (let luck = -EXAM_LUCK; luck <= EXAM_LUCK; luck++) odds[scoreToGrade(power + luck)] += 1 / n;
   return odds;
 }
-
-// 학년 안에서 몇 번째 시험인지에 따라 이름을 붙인다
 function examName(turn) {
-  const names = ['1학기 중간고사', '1학기 기말고사', '2학기 중간고사'];
-  const sameGrade = CONFIG.EXAM_TURNS.filter(t => gradeOf(t) === gradeOf(turn) && t < turn).length;
-  return `${gradeOf(turn)}학년 ${names[sameGrade]}`;
+  const p = periodOf(turn);
+  const names = { 1: '1학기 중간고사', 3: '1학기 기말고사', 4: '2학기 중간고사', 5: '2학기 기말고사' };
+  return `${gradeOf(turn)}학년 ${names[p]}`;
 }
+function rivalPower(turn) { return 66 + turn; }   // 라이벌도 점점 성장한다
 
 function takeExam(s) {
   if (s.phase !== 'exam' || s.examTaken) return null;
   s.examTaken = true;
-  const luck = Math.floor(Math.random() * (EXAM_LUCK * 2 + 1)) - EXAM_LUCK;   // -25 ~ +25
-  const score = examPower(s) + luck;
-  const grade = scoreToGrade(score);
+  const luck = Math.floor(Math.random() * (EXAM_LUCK * 2 + 1)) - EXAM_LUCK;
+  const grade = scoreToGrade(examPower(s) + luck);
+  const rivalGrade = scoreToGrade(rivalPower(s.turn) + Math.floor(Math.random() * 31) - 15);
   const name = examName(s.turn);
-  const real = applyChanges(s, { fame: GRADE_FAME[grade] });
+  const deltas = { fame: GRADE_FAME[grade], stress: GRADE_STRESS[grade] };
+  let rivalText;
+  if (grade < rivalGrade) { s.rivalWins += 1; deltas.fame += 4; deltas.stress -= 5; rivalText = `라이벌 ${RIVAL_NAME}(${rivalGrade}등급)을 이겼다! 복도가 술렁인다.`; }
+  else if (grade === rivalGrade) rivalText = `라이벌 ${RIVAL_NAME}도 ${rivalGrade}등급. 팽팽하다.`;
+  else { s.rivalLosses += 1; deltas.stress += 4; rivalText = `라이벌 ${RIVAL_NAME}은 ${rivalGrade}등급… 또 졌다.`; }
+  const real = applyChanges(s, deltas);
   s.exams.push({ turn: s.turn, name: name, grade: grade });
-  const comments = { 1: '전교권! 담임 선생님이 복도에서 하이파이브를 청했다.', 2: '상위권 안착. 부모님께 전화하기 편하다.', 3: '딱 중간. 무난하지만 아쉽다.', 4: '"다음엔 잘하자…" 스스로에게 하는 말.', 5: '성적표를 접어서 가방 깊숙이 넣었다.' };
-  s.result = { kind: 'exam', title: '📋 ' + name + ' 결과', grade: grade, luck: luck, text: comments[grade], changes: real };
-  addLog(s, '📋', `${name}: ${grade}등급 → ${changesToText(real) || '명성 변화 없음'}`);
+  const comments = { 1: '전교권! 담임 선생님이 복도에서 하이파이브를 청했다.', 2: '상위권 안착. 귀가 주말에 부모님께 자랑할 수 있다.', 3: '딱 중간. 무난하지만 아쉽다.', 4: '"다음엔 잘하자…" 스스로에게 하는 말.', 5: '성적표를 접어서 사물함 깊숙이 넣었다.' };
+  s.result = { kind: 'exam', title: '📋 ' + name + ' 결과', grade: grade, luck: luck, text: comments[grade], changes: real, rivalGrade: rivalGrade, rivalText: rivalText, bad: grade >= 4 };
+  addLog(s, '📋', `${name}: ${grade}등급 (라이벌 ${rivalGrade}등급) → ${changesToText(real) || '변화 없음'}`);
   s.phase = 'examResult';
   return s.result;
 }
-
 function afterExamResult(s) {
   if (s.phase !== 'examResult') return;
   s.result = null;
   endTurn(s);
 }
 
-// ---------- 11. 턴 종료: 자연 감소 + 전학 판정 ----------
+// ---------- 13. 턴 종료: 자연 감소 + 스트레스 + 전학 판정 ----------
 function endTurn(s) {
-  // (1) 2개월이 흘러 능력치가 자연스럽게 떨어진다
   const decay = {};
   for (const key of STATS) {
     let d = CONFIG.DECAY[key];
-    if (s.stats[key] >= CONFIG.HIGH_LINE) d += CONFIG.HIGH_EXTRA_DECAY;   // 높은 능력치는 유지가 어렵다
+    if (s.stats[key] >= CONFIG.HIGH_LINE) d += CONFIG.HIGH_EXTRA_DECAY;
+    if (key === 'fame' && s.president) d -= 2;   // 학생회장은 명성이 잘 안 떨어진다
     decay[key] = changeStat(s, key, -d);
   }
+  // 기숙사 생활 스트레스 (3학년은 더 쌓인다)
+  decay.stress = changeStat(s, 'stress', CONFIG.STRESS_PER_TURN + (gradeOf(s.turn) === 3 ? 3 : 0));
 
-  // (2) 능력치별 '위험 상태' 연속 턴 수 갱신 후 전학 판정
+  let burnout = null;
+  if (s.stress >= CONFIG.STRESS_MAX) {
+    s.burnouts += 1;
+    const real = applyChanges(s, { int: -8, hp: -10, soc: -5 });
+    s.stress = 55;
+    burnout = real;
+    addLog(s, '🔥', `번아웃! ${changesToText(real)} (스트레스 55로 초기화)`);
+  }
+
   const warnings = [];
   let transferKey = null;
   for (const key of STATS) {
@@ -946,18 +1291,17 @@ function endTurn(s) {
       s.lowStreak[key] += 1;
       if (s.lowStreak[key] >= CONFIG.STREAK_TO_TRANSFER) transferKey = key;
       else warnings.push(key);
-    } else {
-      s.lowStreak[key] = 0;
-    }
+    } else s.lowStreak[key] = 0;
   }
 
-  // (3) 턴 요약 만들기
   const total = {};
   for (const key of STATS) total[key] = s.stats[key] - s.turnStartStats[key];
-  s.summary = { turn: s.turn, decay: decay, total: total, warnings: warnings, moneyNow: s.money };
+  total.stress = s.stress - s.turnStartStress;
+  total.penalty = s.penalty - s.turnStartPenalty;
+  s.summary = { turn: s.turn, decay: decay, total: total, warnings: warnings, burnout: burnout, moneyNow: s.money };
 
   if (transferKey) {
-    s.ending = { type: 'transfer', stat: transferKey, reason: `${STAT_NAME[transferKey]} ${CONFIG.DANGER_LINE} 미만 ${CONFIG.STREAK_TO_TRANSFER}턴 연속 → 적응 문제로 전학` };
+    s.ending = { type: 'transfer', stat: transferKey, reason: `${STAT_NAME[transferKey]} ${CONFIG.DANGER_LINE} 미만 ${CONFIG.STREAK_TO_TRANSFER}턴 연속 → 기숙사 적응 실패로 전학` };
     addLog(s, '🚚', s.ending.reason);
     s.phase = 'gameover';
     return;
@@ -968,20 +1312,25 @@ function endTurn(s) {
 
 function nextTurn(s) {
   if (s.phase !== 'summary') return;
-  if (s.turn >= CONFIG.TOTAL_TURNS) {
-    s.phase = 'final';
-    return;
-  }
+  if (s.turn >= CONFIG.TOTAL_TURNS) { s.phase = 'final'; return; }
   s.turn += 1;
   startTurn(s);
 }
 
-// ---------- 12. 졸업 종합 평가 ----------
-function finalPassChance(s) {
-  const p = CONFIG.FINAL_BASE + (s.stats.int - 50) * CONFIG.FINAL_INT_W + (s.stats.hp - 50) * CONFIG.FINAL_HP_W;
-  return clamp(p, 0.05, 0.97);
+// ---------- 14. 수능 & 졸업 ----------
+const SUNEUNG_LUCK = 20;
+const SUNEUNG_CUT = [92, 84, 76, 68, 60, 52, 44, 36];   // 1~8등급 컷, 나머지 9등급
+function suneungGrade(score) {
+  for (let i = 0; i < SUNEUNG_CUT.length; i++) if (score >= SUNEUNG_CUT[i]) return i + 1;
+  return 9;
 }
-
+function suneungOdds(s) {
+  const odds = {};
+  for (let g = 1; g <= 9; g++) odds[g] = 0;
+  const power = examPower(s), n = SUNEUNG_LUCK * 2 + 1;
+  for (let luck = -SUNEUNG_LUCK; luck <= SUNEUNG_LUCK; luck++) odds[suneungGrade(power + luck)] += 1 / n;
+  return odds;
+}
 function failedStats(s) { return STATS.filter(k => s.stats[k] < CONFIG.DANGER_LINE); }
 
 function takeFinalExam(s) {
@@ -989,29 +1338,39 @@ function takeFinalExam(s) {
   const low = failedStats(s);
   if (low.length) {
     s.ending = { type: 'fail_stats', reason: `졸업 사정 탈락: ${low.map(k => STAT_NAME[k]).join(', ')} 기준 미달` };
+    addLog(s, '❌', s.ending.reason);
   } else {
-    const p = finalPassChance(s);
-    if (roll(p)) s.ending = { type: 'graduate', chance: p };
-    else s.ending = { type: 'fail_exam', chance: p, reason: '졸업고사 불합격' };
+    const luck = Math.floor(Math.random() * (SUNEUNG_LUCK * 2 + 1)) - SUNEUNG_LUCK;
+    const grade = suneungGrade(examPower(s) + luck);
+    s.ending = { type: 'graduate', suneung: grade, luck: luck };
+    s.ending.eval = evaluateGraduate(s);
+    addLog(s, '🎓', `수능 ${grade}등급 · 졸업식 (1월 8일)`);
   }
-  addLog(s, s.ending.type === 'graduate' ? '🎓' : '❌', s.ending.type === 'graduate' ? '졸업고사 통과! 졸업 확정' : s.ending.reason);
-  if (s.ending.type === 'graduate') s.ending.eval = evaluateGraduate(s);
   s.phase = 'ending';
   return s.ending;
 }
 
-// 최종 능력치와 시험 기록으로 졸업 평가
 function evaluateGraduate(s) {
   const avg = STATS.reduce((sum, k) => sum + s.stats[k], 0) / 4;
   const examAvg = s.exams.length ? s.exams.reduce((sum, e) => sum + e.grade, 0) / s.exams.length : 5;
   const top = maxStatKey(s);
-  const titles = { int: '전교권 공부왕', hp: '체단실의 전설', soc: '모두의 인싸', fame: '풍산고 셀럽' };
+  const g = s.ending.suneung;
+  let title = { int: '전교권 공부왕', hp: '체단실의 전설', soc: '기숙사 인싸', fame: '풍산고 셀럽' }[top];
+  if (s.president) title = '전설의 학생회장';
+  if (s.outingCount >= 4 && s.caughtCount === 0) title = '한 번도 안 걸린 탈출왕';
+  if (s.rivalWins >= 6) title = `${RIVAL_NAME}의 영원한 라이벌`;
+  let future;
+  if (g <= 2) future = '🎓 원하던 대학에 합격했다!';
+  else if (g <= 4) future = '🎓 괜찮은 대학에 합격했다.';
+  else if (g <= 6) future = '🎓 합격은 했지만 조금 아쉽다.';
+  else future = '🔁 재수를 결심했다. 그래도 졸업은 졸업!';
   let rank, message;
-  if (avg >= 65 && examAvg <= 2.5) { rank = 'S'; message = '공부, 체력, 친구, 명성까지. 후배들이 두고두고 이야기할 전설의 졸업생!'; }
-  else if (avg >= 55) { rank = 'A'; message = '균형 잡힌 3년. 어디 가서도 잘할 모범 졸업생이다.'; }
-  else if (avg >= 42) { rank = 'B'; message = '힘든 순간도 있었지만 무사히 버텨 냈다. 충분히 자랑스러운 졸업!'; }
+  const score = avg + (6 - g) * 3 - s.penalty * 0.5;
+  if (score >= 72 && examAvg <= 2.5) { rank = 'S'; message = '공부, 체력, 친구, 명성까지. 후배들이 두고두고 이야기할 전설의 졸업생!'; }
+  else if (score >= 58) { rank = 'A'; message = '균형 잡힌 3년. 어디 가서도 잘할 모범 졸업생이다.'; }
+  else if (score >= 44) { rank = 'B'; message = '힘든 순간도 있었지만 무사히 버텨 냈다. 충분히 자랑스러운 졸업!'; }
   else { rank = 'C'; message = '아슬아슬 줄타기 끝에 졸업장을 손에 쥐었다. 진짜 생존자.'; }
-  return { avg: Math.round(avg), examAvg: Math.round(examAvg * 10) / 10, rank: rank, title: titles[top], message: message };
+  return { avg: Math.round(avg), examAvg: Math.round(examAvg * 10) / 10, rank: rank, title: title, message: message, future: future };
 }
 
 // 노드(시뮬레이션)에서 불러 쓸 수 있게 내보내기. 브라우저에서는 무시된다.
@@ -1019,9 +1378,10 @@ if (typeof module !== 'undefined') {
   module.exports = {
     CONFIG, STATS, STAT_NAME, ROULETTE, ITEMS, SPECIAL_EVENTS, VACATION_OPTIONS, RANDOM_EVENTS,
     formatWon, newGame, startTurn, spinRoulette, goShop, buyItem, cannotBuyReason, leaveShop,
+    getCalendarEvent, chooseCalendar, afterCalendarResult,
     getSpecialOptions, doSpecial, afterEventResult, getPendingRandom, canChoose, chooseRandom,
-    afterRandomResult, takeExam, afterExamResult, nextTurn, takeFinalExam, finalPassChance,
-    gradeOdds, isVacation, isExamTurn, maxStatKey, minStatKey, examPower,
+    afterRandomResult, takeExam, afterExamResult, nextTurn, takeFinalExam,
+    gradeOdds, suneungOdds, isVacation, isExamTurn, maxStatKey, minStatKey, examPower,
   };
 }
 
@@ -1034,12 +1394,12 @@ if (typeof module !== 'undefined') {
 //  - 흐름: 버튼 클릭 → handleAction() → 규칙 함수 호출 → render()
 // =====================================================================
 
-const SAVE_KEY = 'pungsan-graduation-save-v1';
+const SAVE_KEY = 'pungsan-graduation-save-v2';
 
 // ---------- 자동 업데이트 ----------
 // 새 버전을 올릴 때: 아래 APP_VERSION 과 version.json 의 "version" 을 같은 값으로 바꾼다.
 // 그러면 접속 중인 사람은 1분 안에 알림을 받고, 지금 판이 끝나면 새 버전으로 바뀐다.
-const APP_VERSION = '2026.11.24-2';
+const APP_VERSION = '2026.11.24-3';
 const VERSION_CHECK_MS = 60 * 1000;
 let remoteVersion = null;     // 서버에 올라온 최신 버전
 let newVersionReady = false;  // 새 버전이 기다리는 중인지
@@ -1103,7 +1463,7 @@ function loadGame() {
     const text = localStorage.getItem(SAVE_KEY);
     if (!text) return null;
     const data = JSON.parse(text);
-    return data && data.version === 1 ? data : null;
+    return data && data.version === 2 ? data : null;
   } catch (e) { return null; }
 }
 
@@ -1116,8 +1476,10 @@ function pct(p) { return Math.round(p * 100) + '%'; }
 
 function chipsHTML(changes, extra) {
   let html = '';
-  for (const k of STATS) {
-    if (changes[k]) html += `<span class="chip ${changes[k] > 0 ? 'up' : 'down'}">${STAT_EMOJI[k]} ${STAT_NAME[k]} ${sign(changes[k])}</span>`;
+  for (const k of ALL_KEYS) {
+    if (!changes[k]) continue;
+    const good = BAD_KEYS.includes(k) ? changes[k] < 0 : changes[k] > 0;
+    html += `<span class="chip ${good ? 'up' : 'down'}">${STAT_EMOJI[k]} ${STAT_NAME[k]} ${sign(changes[k])}</span>`;
   }
   if (extra) html += extra;
   return html || '<span class="chip">능력치 변화 없음</span>';
@@ -1134,12 +1496,12 @@ function expHint(exp) {
   return parts.join(' · ');
 }
 
-const PHASE_STEP = { roulette: 0, shop: 1, event: 2, eventResult: 2, random: 3, randomResult: 3, exam: 4, examResult: 4, summary: 5 };
+const PHASE_STEP = { roulette: 0, shop: 1, calendar: 2, calendarResult: 2, event: 3, eventResult: 3, random: 4, randomResult: 4, exam: 5, examResult: 5, summary: 6 };
 function stepsHTML() {
-  const names = ['🎡 용돈', '🛒 매점', '⭐ 이벤트', '🎲 사건', '📋 시험', '📅 정리'];
+  const names = ['🏠 귀가', '🛒 매점', '📅 학사일정', '⭐ 활동', '🎲 사건', '📋 시험', '🌙 정리'];
   const now = PHASE_STEP[s.phase];
   return '<div class="steps">' + names.map((n, i) => {
-    if (i === 4 && !isExamTurn(s.turn)) return '';
+    if (i === 5 && !isExamTurn(s.turn)) return '';
     const cls = i === now ? 'on' : (i < now ? 'done' : '');
     return `<span class="${cls}">${n}</span>`;
   }).join('') + '</div>';
@@ -1162,10 +1524,23 @@ function playerHTML() {
         ${streak > 0 ? `<span class="warn-tag">⚠️ 위험 ${streak}턴째</span>` : ''}
       </div>`;
   }
+  const stressPct = s.stress;
+  const penPct = Math.min(100, s.penalty / CONFIG.PENALTY_OUT * 100);
+  const gauges = `
+      <div class="stat ${s.stress >= CONFIG.STRESS_HIGH ? 'low' : ''}">
+        <div class="stat-top"><span>😵 스트레스</span><span class="stat-val">${s.stress}<span class="small">/100</span></span></div>
+        <div class="bar"><i style="width:${stressPct}%;background:var(--stress)"></i><span class="danger-line" style="left:${CONFIG.STRESS_HIGH}%"></span></div>
+        ${s.stress >= CONFIG.STRESS_HIGH ? `<span class="warn-tag">🔥 100이 되면 번아웃</span>` : ''}
+      </div>
+      <div class="stat ${s.penalty >= CONFIG.PENALTY_WARN ? 'low' : ''}">
+        <div class="stat-top"><span>🚨 기숙사 벌점</span><span class="stat-val">${s.penalty}<span class="small">/${CONFIG.PENALTY_OUT}</span></span></div>
+        <div class="bar"><i style="width:${penPct}%;background:var(--penalty)"></i><span class="danger-line" style="left:${CONFIG.PENALTY_WARN / CONFIG.PENALTY_OUT * 100}%"></span></div>
+        ${s.penalty >= CONFIG.PENALTY_WARN ? `<span class="warn-tag">${CONFIG.PENALTY_OUT}점이면 강제 퇴사</span>` : ''}
+      </div>`;
   let dots = '';
   for (let t = 1; t <= CONFIG.TOTAL_TURNS; t++) {
     const cls = t < s.turn ? 'done' : (t === s.turn ? 'now' : '');
-    const mark = isExamTurn(t) ? '📋' : (isVacation(t) ? '🏖' : (t === CONFIG.TOTAL_TURNS ? '🎓' : ''));
+    const mark = t === CONFIG.TOTAL_TURNS ? '🎓' : (isVacation(t) ? '🏖' : (isExamTurn(t) ? '📋' : ''));
     dots += `<div class="dot ${cls}" title="${turnLabel(t)}">${mark}</div>`;
   }
   return `
@@ -1176,12 +1551,14 @@ function playerHTML() {
           <div>
             <div class="player-name">${esc(s.name)}</div>
             <div class="player-sub">${turnLabel(s.turn)} · ${s.turn}/${CONFIG.TOTAL_TURNS}턴</div>
+            ${s.president ? '<span class="title-badge">👑 학생회장</span>' : ''}
           </div>
         </div>
         <div class="money"><span>💰 용돈</span><b>${formatWon(s.money)}</b></div>
         <div class="stats">${statsHTML}</div>
+        <div class="gauges">${gauges}</div>
         <div class="timeline">${dots}</div>
-        <div class="legend">📋 시험 · 🏖 방학 · 🎓 졸업 평가 · 빨간 선 = 위험선(${CONFIG.DANGER_LINE})</div>
+        <div class="legend">📋 시험 · 🏖 방학 · 🎓 수능 · 빨간 선 = 위험선</div>
       </div>
     </aside>`;
 }
@@ -1193,16 +1570,16 @@ function titleHTML() {
     <div class="card hero fade-in">
       <div class="school">🏫</div>
       <h1>풍산고에서 졸업하기</h1>
-      <p>기숙사, 연등, 체단실, 무단외출의 유혹… 3년을 버텨라.</p>
+      <p>안동 풍산읍 논밭 한가운데, 전원 기숙사 학교.<br>점호, 연등, 방 검사, 무단외출의 유혹… 3년을 버텨라.</p>
       <div class="btn-row" style="justify-content:center">
         <button class="btn yellow" data-action="new">✏️ 새 게임 시작</button>
         ${saved ? `<button class="btn" data-action="continue">▶ 이어하기 (${esc(saved.name)}, ${saved.turn}턴)</button>` : ''}
       </div>
       <div class="rules">
-        <div class="rule"><b>🎯 목표</b>15턴(3년)을 버티고 졸업 평가를 통과하기</div>
+        <div class="rule"><b>🎯 목표</b>실제 학사일정대로 3년(15턴)을 버티고 수능까지 보기</div>
         <div class="rule"><b>🚚 전학</b>능력치가 ${CONFIG.DANGER_LINE} 미만인 채로 ${CONFIG.STREAK_TO_TRANSFER}턴 연속이면 전학</div>
-        <div class="rule"><b>🚨 퇴학</b>무단외출이 걸리면 그 자리에서 퇴학</div>
-        <div class="rule"><b>📉 시간</b>매 턴 능력치가 저절로 떨어진다. 골고루 챙겨야 산다</div>
+        <div class="rule"><b>🚨 퇴사</b>기숙사 벌점 ${CONFIG.PENALTY_OUT}점이면 강제 퇴사 = 퇴학</div>
+        <div class="rule"><b>🔥 번아웃</b>스트레스가 100이 되면 모든 게 무너진다</div>
       </div>
     </div>`;
 }
@@ -1256,13 +1633,15 @@ function welcomeHTML() {
       <div style="font-size:54px">🌸🎒🌸</div>
       <h2>입학을 축하합니다!</h2>
       <p class="result-text"><b>${esc(s.name)}</b> 학생의 풍산고등학교 입학을 진심으로 축하합니다.<br>
-      오늘부터 기숙사 생활 시작. ${STAT_EMOJI[s.focus]} <b>${STAT_NAME[s.focus]}</b>에 자신 있는 신입생이라는 소문이 벌써 돌고 있다.</p>
+      논밭 사이로 버스가 하루 몇 대 안 다니는 풍산읍, 오늘부터 3년간 기숙사 생활 시작.<br>${STAT_EMOJI[s.focus]} <b>${STAT_NAME[s.focus]}</b>에 자신 있는 신입생이라는 소문이 벌써 돌고 있다.</p>
       <div class="info" style="text-align:left">
         📌 <b>살아남는 법</b><br>
-        · 매 턴 끝에 능력치가 저절로 떨어진다 (지능 -${CONFIG.DECAY.int}, 체력 -${CONFIG.DECAY.hp}, 사회성 -${CONFIG.DECAY.soc}, 명성 -${CONFIG.DECAY.fame})<br>
-        · ${CONFIG.HIGH_LINE} 이상인 능력치는 더 빨리 떨어지고, ${CONFIG.SOFT_CAP} 이상이면 오르는 양이 절반<br>
-        · 같은 특별 이벤트를 연속으로 고르면 좋은 효과가 절반<br>
-        · 마지막엔 모든 능력치 ${CONFIG.DANGER_LINE} 이상 + 졸업고사 통과해야 졸업
+        · 매 턴 능력치가 저절로 떨어진다 (지능 -${CONFIG.DECAY.int}, 체력 -${CONFIG.DECAY.hp}, 사회성 -${CONFIG.DECAY.soc}, 명성 -${CONFIG.DECAY.fame})<br>
+        · 😵 <b>스트레스</b>는 매 턴 +${CONFIG.STRESS_PER_TURN}씩 쌓인다. ${CONFIG.STRESS_HIGH} 이상이면 모든 성공률과 시험 실력이 떨어지고, 100이면 번아웃<br>
+        · 🚨 <b>벌점</b>: 무단외출·야식·폰·점호 지각… ${CONFIG.PENALTY_WARN}점이면 부모님 호출, ${CONFIG.PENALTY_OUT}점이면 강제 퇴사<br>
+        · 📅 매 턴 실제 풍산고 학사일정 이벤트가 열린다 (전통문화체험, 문경새재, 학생회장 선거, 봉황축제…)<br>
+        · ⚔️ 시험마다 전교 1등 라이벌 <b>${RIVAL_NAME}</b>과 등급 대결<br>
+        · 3학년 마지막엔 수능. 모든 능력치 ${CONFIG.DANGER_LINE} 이상이어야 졸업
       </div>
       <div class="btn-row" style="justify-content:center"><button class="btn yellow" data-action="start">🏫 첫 학기 시작</button></div>
     </div>`;
@@ -1285,8 +1664,8 @@ function rouletteHTML() {
   return `
     <div class="card stage fade-in">
       ${stepsHTML()}
-      <h2>🎡 용돈 돌림판</h2>
-      <p class="lead">부모님이 보내 주신 이번 시기 용돈. 돌림판은 한 턴에 한 번!</p>
+      <h2>🏠 귀가 주말 · 용돈 돌림판</h2>
+      <p class="lead">2주마다 돌아오는 귀가 주말! 집밥 먹고 스트레스 -${CONFIG.HOME_RELIEF}. 부모님 용돈은 돌림판으로.</p>
       <div class="wheel-area">
         <div class="wheel-box">
           <div class="pointer"></div>
@@ -1295,6 +1674,7 @@ function rouletteHTML() {
         </div>
         ${done
           ? `<div class="big-money fade-in">+${formatWon(s.lastSpin.amount)}</div>
+             ${s.lastSpin.relief ? `<div class="chips"><span class="chip up">😵 스트레스 ${s.lastSpin.relief}</span></div>` : ''}
              <button class="btn yellow" data-action="toShop">🛒 매점 가기 →</button>`
           : `<button class="btn yellow" id="spinBtn" data-action="spin" ${spinning ? 'disabled' : ''}>${spinning ? '빙글빙글…' : '돌림판 돌리기!'}</button>`}
         <table class="odds-table">${odds}</table>
@@ -1311,7 +1691,7 @@ function shopHTML() {
       <div class="item">
         <div class="top"><span class="emo">${it.emoji}</span><div><div class="name display" style="font-size:20px">${it.name}</div><div class="price">${formatWon(it.price)}</div></div></div>
         <div class="small">${it.desc}</div>
-        <div class="pills"><span class="pill green">${STAT_EMOJI[it.stat]} ${STAT_NAME[it.stat]} +${it.amount}</span>${capped ? '<span class="pill yellow">80 이상: 효과 절반</span>' : ''}</div>
+        <div class="pills"><span class="pill green">${STAT_EMOJI[it.stat]} ${STAT_NAME[it.stat]} ${sign(it.amount)}</span>${capped ? '<span class="pill yellow">80 이상: 효과 절반</span>' : ''}</div>
         <button class="btn" data-action="buy" data-id="${it.id}" ${reason ? 'disabled' : ''}>${reason || '구매하기'}</button>
       </div>`;
   }
@@ -1319,13 +1699,13 @@ function shopHTML() {
     <div class="card stage fade-in">
       ${stepsHTML()}
       <h2>🛒 매점</h2>
-      <p class="lead">사면 바로 능력치가 오른다. 명성은 파는 곳이 없다 — 시험과 이벤트로만!</p>
+      <p class="lead">기숙사 1층 매점. 사면 바로 효과가 난다. 명성은 파는 곳이 없다. 시험과 이벤트로만!</p>
       <div class="shop-meta">
         <span class="pill yellow">💰 보유 ${formatWon(s.money)}</span>
         <span class="pill">🧺 이번 턴 구매 ${s.boughtThisTurn}/${CONFIG.MAX_ITEMS_PER_TURN}</span>
       </div>
       <div class="choices">${cards}</div>
-      <div class="btn-row"><button class="btn yellow" data-action="leaveShop">다음: 이번 시기 할 일 고르기 →</button></div>
+      <div class="btn-row"><button class="btn yellow" data-action="leaveShop">다음: 학사일정 확인 →</button></div>
     </div>`;
 }
 
@@ -1333,15 +1713,19 @@ function eventHTML() {
   const vacation = isVacation(s.turn);
   let cards = '';
   for (const ev of getSpecialOptions(s)) {
-    const p = ev.successChance(s);
+    const base = ev.successChance(s);
+    const p = base < 1 ? clamp(base + stressMod(s), 0.05, 0.95) : 1;
     const repeat = !vacation && s.lastEvent === ev.id;
     let pills = '';
     if (ev.risk) pills += `<span class="pill red">🚨 퇴학 위험 ${pct(1 - p)}</span>`;
     else if (p < 1) pills += `<span class="pill">🎯 성공률 ${pct(p)}</span>`;
     else pills += `<span class="pill green">✔ 확정</span>`;
     if (repeat) pills += `<span class="pill yellow">🔁 연속 선택: 좋은 효과 절반</span>`;
+    const short = ev.cost && s.money < ev.cost;
+    if (ev.cost) pills += `<span class="pill yellow">💸 ${formatWon(ev.cost)}${short ? ' (용돈 부족)' : ''}</span>`;
+    if (ev.risk && s.stress >= CONFIG.STRESS_HIGH) pills += `<span class="pill red">😵 스트레스로 성공률 -10%</span>`;
     cards += `
-      <button class="choice ${ev.risk ? 'risky' : ''}" data-action="special" data-id="${ev.id}">
+      <button class="choice ${ev.risk ? 'risky' : ''}" data-action="special" data-id="${ev.id}" ${short ? 'disabled' : ''}>
         <span class="emo">${ev.emoji}</span>
         <span class="name">${ev.name}</span>
         <span class="desc">${ev.desc}</span>
@@ -1354,7 +1738,7 @@ function eventHTML() {
     <div class="card stage fade-in">
       ${stepsHTML()}
       <h2>${vacation ? '🏖 방학이다! 어떻게 보낼까?' : '⭐ 이번 시기, 뭘 해 볼까?'}</h2>
-      <p class="lead">${vacation ? '방학엔 특별 이벤트 대신 방학 계획 하나를 고른다.' : '특별 이벤트는 한 턴에 하나만 할 수 있다.'}</p>
+      <p class="lead">${vacation ? '방학엔 기숙사를 떠나 집으로! 방학 계획 하나를 고른다.' : '활동은 한 턴에 하나만. 스트레스가 높으면 쉬는 것도 전략이다.'}</p>
       <div class="choices">${cards}</div>
     </div>`;
 }
@@ -1369,37 +1753,55 @@ function resultHTML(nextAction, nextLabel) {
     <div class="card stage fade-in">
       ${stepsHTML()}
       <h2>${r.title}</h2>
+      ${r.date ? `<span class="date-tag">📅 ${r.date}</span>` : ''}
       ${r.choice ? `<p class="lead">선택: ${r.choice}</p>` : (r.chance !== undefined && r.chance < 1 ? `<p class="lead">성공 확률 ${pct(r.chance)} → ${r.ok ? '성공!' : '실패…'}</p>` : '<p class="lead">결과</p>')}
-      <div class="result-box ${r.kind === 'special' ? (good ? 'good' : 'bad') : ''}">
-        <div class="result-emoji">${r.kind === 'special' ? (good ? '🎉' : '💥') : '📖'}</div>
+      <div class="result-box ${r.bad ? 'bad' : (r.kind === 'special' ? 'good' : '')}">
+        <div class="result-emoji">${r.bad ? '💥' : (r.kind === 'special' ? '🎉' : '📖')}</div>
         <p class="result-text">${r.text}</p>
         <div class="chips">${chipsHTML(r.changes, extra)}</div>
         ${r.repeated ? '<p class="small">🔁 지난 턴과 같은 이벤트라 좋은 효과가 절반이었다.</p>' : ''}
       </div>
+      ${r.warn ? `<div class="alert">${r.warn}</div>` : ''}
       <div class="btn-row"><button class="btn yellow" data-action="${nextAction}">${nextLabel}</button></div>
     </div>`;
 }
 
-function randomHTML() {
-  const ev = getPendingRandom(s);
+function choiceCardsHTML(ev, action) {
   let cards = '';
   ev.choices.forEach((c, i) => {
     const ok = canChoose(s, c);
     cards += `
-      <button class="choice" data-action="randomChoice" data-id="${i}" ${ok ? '' : 'disabled'}>
+      <button class="choice" data-action="${action}" data-id="${i}" ${ok ? '' : 'disabled'}>
         <span class="name">${c.label}</span>
         <span class="hint">${expHint(c.exp)}</span>
         ${c.note ? `<span class="note">💡 ${c.note}</span>` : ''}
         <span class="pills">${c.cost ? `<span class="pill yellow">💸 ${formatWon(c.cost)}${ok ? '' : ' (용돈 부족)'}</span>` : ''}${c.money ? `<span class="pill green">💰 +${formatWon(c.money)}</span>` : ''}</span>
       </button>`;
   });
+  return cards;
+}
+
+function randomHTML() {
+  const ev = getPendingRandom(s);
   return `
     <div class="card stage fade-in">
       ${stepsHTML()}
       <span class="step-tag">🎲 돌발 사건</span>
       <h2>${ev.title}</h2>
       <p class="result-text">${ev.text}</p>
-      <div class="choices">${cards}</div>
+      <div class="choices">${choiceCardsHTML(ev, 'randomChoice')}</div>
+    </div>`;
+}
+
+function calendarHTML() {
+  const ev = getCalendarEvent(s);
+  return `
+    <div class="card stage fade-in">
+      ${stepsHTML()}
+      <span class="date-tag">📅 2026 풍산고 학사일정 · ${ev.date}</span>
+      <h2>${ev.title}</h2>
+      <p class="result-text">${ev.text}</p>
+      <div class="choices">${choiceCardsHTML(ev, 'calendarChoice')}</div>
     </div>`;
 }
 
@@ -1418,8 +1820,10 @@ function examHTML() {
       <h2>📋 ${name}</h2>
       <p class="lead">지능이 높을수록 좋은 등급이 나올 확률이 오른다. 그래도 시험은 운도 따른다!</p>
       <div class="odds">${rows}</div>
-      ${s.stats.hp < 40 ? `<div class="alert">😵 체력이 ${s.stats.hp}라 집중력이 떨어졌다. 시험 실력 -${40 - s.stats.hp}</div>` : ''}
-      <div class="info">보상: 1등급 명성 +15 · 2등급 +10 · 3등급 +5 · 4등급 0 · 5등급 -10</div>
+      ${s.stats.hp < 40 ? `<div class="alert">💪 체력이 ${s.stats.hp}라 집중력이 떨어졌다. 시험 실력 -${40 - s.stats.hp}</div>` : ''}
+      ${s.stress >= CONFIG.STRESS_HIGH ? `<div class="alert">😵 스트레스 ${s.stress}! 머리가 하얘진다. 시험 실력 -${Math.round((s.stress - CONFIG.STRESS_HIGH + 10) / 2)}</div>` : ''}
+      <div class="rival">⚔️ 라이벌 ${RIVAL_NAME}도 이번 시험을 본다. 등급이 더 높으면 명성 +4 · 스트레스 -5</div>
+      <div class="info">보상: 1등급 명성 +${GRADE_FAME[1]} · 2등급 +${GRADE_FAME[2]} · 3등급 +${GRADE_FAME[3]} · 5등급 ${GRADE_FAME[5]}<br>등급이 낮으면 스트레스가 크게 오른다 (5등급 +${GRADE_STRESS[5]})</div>
       <div class="btn-row"><button class="btn yellow" data-action="exam">✍️ 시험 보기</button></div>
     </div>`;
 }
@@ -1433,7 +1837,8 @@ function examResultHTML() {
       <div class="grade-big" style="background:${GRADE_COLOR[r.grade]}">${r.grade}등급</div>
       <p class="result-text">${r.text}</p>
       <p class="small">그날의 운: ${sign(r.luck)}</p>
-      <div class="chips" style="justify-content:center">${chipsHTML(r.changes)}</div>
+      <div class="rival">⚔️ ${r.rivalText}</div>
+      <div class="chips" style="justify-content:center;margin-top:12px">${chipsHTML(r.changes)}</div>
       <div class="btn-row" style="justify-content:center"><button class="btn yellow" data-action="afterExam">이번 시기 정리하기 →</button></div>
     </div>`;
 }
@@ -1448,7 +1853,11 @@ function summaryHTML() {
       <td class="minus">${sign(sum.decay[k])}</td>
       <td><b>${s.stats[k]}</b></td></tr>`;
   }
+  const st = sum.total.stress;
+  rows += `<tr><td>😵 스트레스</td><td class="${st > 0 ? 'minus' : (st < 0 ? 'plus' : '')}">${sign(st)}</td><td class="minus">${sign(sum.decay.stress)}</td><td><b>${s.stress}</b></td></tr>`;
+  if (s.penalty || sum.total.penalty) rows += `<tr><td>🚨 벌점</td><td class="${sum.total.penalty > 0 ? 'minus' : (sum.total.penalty < 0 ? 'plus' : '')}">${sign(sum.total.penalty)}</td><td>-</td><td><b>${s.penalty}</b></td></tr>`;
   let alerts = '';
+  if (sum.burnout) alerts += `<div class="alert">🔥 번아웃! 쌓인 스트레스가 터졌다. 며칠을 침대에서 못 일어났다. (${changesToText(sum.burnout)}, 스트레스 55로)</div>`;
   for (const k of sum.warnings) {
     alerts += `<div class="alert">⚠️ ${STAT_NAME[k]}이(가) ${CONFIG.DANGER_LINE} 미만! 다음 턴이 끝날 때까지 ${CONFIG.DANGER_LINE} 이상으로 올리지 못하면 전학이다.</div>`;
   }
@@ -1456,38 +1865,48 @@ function summaryHTML() {
   let preview = '';
   if (!last) {
     const n = s.turn + 1;
-    preview = `<div class="info">다음: <b>${turnLabel(n)}</b>${isExamTurn(n) ? ' — 시험이 있다. 지능·체력 챙기자!' : ''}${isVacation(n) ? ' — 방학이다!' : ''}</div>`;
+    const nextEv = getCalendarEvent(Object.assign({}, s, { turn: n }));
+    preview = `<div class="info">다음: <b>${turnLabel(n)} · ${turnTitle(n)}</b>${nextEv ? `<br>📅 ${nextEv.date} ${nextEv.title}` : ''}${isExamTurn(n) ? '<br>📋 시험이 있다. 지능·체력·스트레스 관리!' : ''}${n === CONFIG.TOTAL_TURNS ? '<br>🎓 마지막 시기. 수능이 다가온다.' : ''}</div>`;
   }
   return `
     <div class="card stage fade-in">
       ${stepsHTML()}
-      <h2>📅 ${turnLabel(s.turn)} 마무리</h2>
-      <p class="lead">2개월이 흘렀다. 이번 턴 동안의 변화를 정리했다.</p>
+      <h2>🌙 ${turnLabel(s.turn)} 마무리</h2>
+      <p class="lead">기숙사 소등. 이번 시기 동안의 변화를 정리했다. 기숙사 생활 스트레스 +${sum.decay.stress}.</p>
       <table class="sum-table">
         <tr><th>능력치</th><th>이번 턴 합계</th><th>자연 감소</th><th>현재</th></tr>
         ${rows}
       </table>
       ${alerts}
       ${preview}
-      <div class="btn-row"><button class="btn yellow" data-action="nextTurn">${last ? '🎓 졸업 종합 평가로 →' : '다음 턴으로 →'}</button></div>
+      <div class="btn-row"><button class="btn yellow" data-action="nextTurn">${last ? '🎓 수능 보러 가기 →' : '다음 시기로 →'}</button></div>
     </div>`;
 }
 
 function finalHTML() {
   const low = failedStats(s);
-  const p = finalPassChance(s);
-  let checks = `<div class="check">✅ 전학·퇴학 없이 15턴 완주</div>`;
+  let checks = `<div class="check">✅ 전학·퇴학 없이 3년 완주</div>`;
   for (const k of STATS) {
     const ok = s.stats[k] >= CONFIG.DANGER_LINE;
     checks += `<div class="check">${ok ? '✅' : '❌'} ${STAT_EMOJI[k]} ${STAT_NAME[k]} ${s.stats[k]} ${ok ? '' : `(기준 ${CONFIG.DANGER_LINE} 미달)`}</div>`;
   }
-  checks += `<div class="check">${low.length ? '⛔' : '📝'} 졸업고사 통과 확률 <b>${low.length ? '응시 불가' : pct(p)}</b> <span class="small">(지능·체력이 높을수록↑)</span></div>`;
+  let odds = '';
+  if (!low.length) {
+    const o = suneungOdds(s);
+    for (let g = 1; g <= 9; g++) {
+      if (o[g] < 0.005) continue;
+      const color = GRADE_COLOR[Math.min(5, Math.ceil(g / 2))];
+      odds += `<div class="odds-row"><span>${g}등급</span><div class="bar"><i style="width:${o[g] * 100}%;background:${color}"></i></div><span>${pct(o[g])}</span></div>`;
+    }
+  }
   return `
     <div class="card stage fade-in">
-      <h2>🎓 졸업 종합 평가</h2>
-      <p class="lead">3년의 마지막 관문. 모든 능력치 ${CONFIG.DANGER_LINE} 이상 + 졸업고사 통과가 필요하다.</p>
+      <span class="date-tag">📅 11월 19일(목) · 대학수학능력시험</span>
+      <h2>🎓 수능 & 졸업 사정</h2>
+      <p class="lead">3년의 마지막 관문. 모든 능력치가 ${CONFIG.DANGER_LINE} 이상이면 졸업, 수능 등급으로 진로가 정해진다.</p>
       ${checks}
-      <div class="btn-row"><button class="btn yellow" data-action="final">${low.length ? '결과 확인' : '✍️ 졸업고사 응시'}</button></div>
+      ${low.length ? '<div class="alert">⛔ 기준 미달 능력치가 있어 졸업할 수 없다.</div>' : `<h3>예상 수능 등급</h3><div class="odds">${odds}</div>${s.stress >= CONFIG.STRESS_HIGH ? `<div class="alert">😵 스트레스 ${s.stress}… 수능 실력이 깎인다.</div>` : ''}`}
+      <div class="btn-row"><button class="btn yellow" data-action="final">${low.length ? '결과 확인' : '✍️ 수능 응시'}</button></div>
     </div>`;
 }
 
@@ -1510,28 +1929,29 @@ function endingHTML() {
           <h2>졸 업 장</h2>
           <p class="result-text"><b style="font-size:22px">${esc(s.name)}</b><br>위 학생은 풍산고등학교에서 3년의 과정을 마쳤기에 이 증서를 수여함.</p>
           <div class="rank">${ev.rank}</div>
-          <p><b>「${ev.title}」</b> · 평균 능력치 ${ev.avg} · 평균 등급 ${ev.examAvg}</p>
+          <p><b>「${ev.title}」</b> · 평균 능력치 ${ev.avg} · 내신 평균 ${ev.examAvg}등급</p>
+          <p style="font-size:20px"><b>수능 ${e.suneung}등급</b> · ${ev.future}</p>
           <p>${ev.message}</p>
           ${finalStatsHTML()}
           <h3>📋 시험 성적 기록</h3>
           ${examListHTML()}
-          <p class="small" style="margin-top:12px">졸업고사 통과 확률은 ${pct(e.chance)}였다.</p>
+          <p class="small" style="margin-top:12px">⚔️ 라이벌 ${RIVAL_NAME} 상대 ${s.rivalWins}승 ${s.rivalLosses}패 · 🔥 번아웃 ${s.burnouts}회 · 🚨 최종 벌점 ${s.penalty}점 · 🏃 무단외출 성공 ${s.outingCount}회</p>
+          <p class="small">1월 8일 졸업식. 기숙사 방 열쇠를 반납했다.</p>
         </div>
         <div class="btn-row"><button class="btn yellow" data-action="new">🔁 다시 입학하기</button><button class="btn ghost" data-action="home">처음 화면</button></div>
       </div>`;
   }
   // 실패 엔딩들
   const info = {
-    expel: { emoji: '🚨', title: '퇴학 처리', msg: '사감 선생님의 손전등 불빛이 너의 학교생활을 비췄다…' },
-    transfer: { emoji: '🚚', title: '전학', msg: '적응 문제로 결국 짐을 쌌다. 기숙사 방 이름표가 떼어졌다.' },
+    expel: { emoji: '🚨', title: '강제 퇴사 · 퇴학', msg: '기숙사 짐을 싸서 풍산읍 버스 정류장에 섰다. 사감 선생님의 손전등 불빛이 아직도 눈에 선하다…' },
+    transfer: { emoji: '🚚', title: '전학', msg: '기숙사 적응에 실패해 결국 짐을 쌌다. 방문 이름표가 떼어졌다.' },
     fail_stats: { emoji: '📉', title: '졸업 사정 탈락', msg: '마지막까지 버텼지만 기준에 못 미쳤다.' },
-    fail_exam: { emoji: '📝', title: '졸업고사 불합격', msg: `통과 확률 ${e.chance !== undefined ? pct(e.chance) : ''}… 이번엔 운이 따르지 않았다.` },
   }[e.type];
   return `
     <div class="card stage fade-in">
       <div class="over-emoji">${info.emoji}</div>
       <h2 style="text-align:center">GAME OVER · ${info.title}</h2>
-      <p class="result-text" style="text-align:center">${s.result && e.type === 'expel' ? s.result.text + '<br>' : ''}${info.msg}</p>
+      <p class="result-text" style="text-align:center">${s.result && e.type === 'expel' ? s.result.text + '<br><br>' : ''}${info.msg}</p>
       <div class="alert">${e.reason}</div>
       <p style="text-align:center">버틴 기간: <b>${turnLabel(s.turn)}</b> (${s.turn}/${CONFIG.TOTAL_TURNS}턴)</p>
       ${finalStatsHTML()}
@@ -1559,6 +1979,8 @@ function stageHTML() {
     case 'welcome': return welcomeHTML();
     case 'roulette': return rouletteHTML();
     case 'shop': return shopHTML();
+    case 'calendar': return calendarHTML();
+    case 'calendarResult': return resultHTML('afterCalendar', '계속 →');
     case 'event': return eventHTML();
     case 'eventResult': return resultHTML('afterEvent', '계속 →');
     case 'random': return randomHTML();
@@ -1590,6 +2012,15 @@ function render() {
 
   top.innerHTML = updateBadgeHTML() + `<button class="btn ghost" data-action="reset">${resetArmed ? '정말? 한 번 더 누르기' : '처음부터'}</button>`;
   app.innerHTML = `<div class="grid">${playerHTML()}<main>${stageHTML()}</main></div>${logHTML()}`;
+  const stageCard = app.querySelector('main .card');
+  if (stageCard && !gameFinished() && s.phase !== 'welcome' && s.phase !== 'final') {
+    const crisis = [];
+    for (const k of STATS) if (s.stats[k] < CONFIG.DANGER_LINE) crisis.push(`${STAT_EMOJI[k]} ${STAT_NAME[k]} ${s.stats[k]}: 위험선 아래! ${s.lowStreak[k] ? '이번 시기 안에 못 올리면 전학' : ''}`);
+    if (s.stress >= 85) crisis.push(`😵 스트레스 ${s.stress}: 번아웃 직전!`);
+    if (s.penalty >= CONFIG.PENALTY_OUT - 6) crisis.push(`🚨 벌점 ${s.penalty}/${CONFIG.PENALTY_OUT}: 한 번만 더 걸리면 퇴사!`);
+    if (crisis.length) stageCard.insertAdjacentHTML('afterbegin', `<div class="crisis">${crisis.map(c => `<span>${c}</span>`).join('')}</div>`);
+  }
+  if (stageCard && lastPhase !== s.phase && ((s.result && s.result.bad && s.phase.endsWith('Result')) || s.phase === 'gameover')) stageCard.classList.add('shake');
   if (newVersionReady && gameFinished()) {
     const stage = app.querySelector('main .card');
     if (stage) stage.insertAdjacentHTML('beforeend', `<div class="info update-note">✨ <b>새 버전이 나왔어요!</b> '다시 입학하기'를 누르면 새 버전으로 시작돼요.</div>`);
@@ -1673,6 +2104,8 @@ function handleAction(action, id) {
     case 'special': doSpecial(s, id); break;
     case 'afterEvent': afterEventResult(s); break;
     case 'randomChoice': chooseRandom(s, Number(id)); break;
+    case 'calendarChoice': chooseCalendar(s, Number(id)); break;
+    case 'afterCalendar': afterCalendarResult(s); break;
     case 'afterRandom': afterRandomResult(s); break;
     case 'exam': takeExam(s); break;
     case 'afterExam': afterExamResult(s); break;
