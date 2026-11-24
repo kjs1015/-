@@ -289,6 +289,20 @@ details.log[open] summary::after { content: '접기 ▴'; }
 .rival { margin: 8px auto 0; max-width: 420px; border-radius: 12px; padding: 8px 12px; background: #F3F0FF; border: 2px solid #D0BFFF; font-size: 14px; font-weight: 700; color: #5F3DC4; }
 .shake { animation: shake .45s; }
 @keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+.quiz-box { display: grid; gap: 10px; }
+.quiz-q { font-family: 'Jua', sans-serif; font-size: 23px; line-height: 1.4; margin: 6px 0; }
+.quiz-timer { height: 10px; border-radius: 99px; background: #F1EADF; overflow: hidden; }
+.quiz-timer i { display: block; height: 100%; background: var(--yellow); border-radius: 99px; transition: width .1s linear; }
+.quiz-timer.hurry i { background: var(--red); }
+.quiz-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 520px) { .quiz-opts { grid-template-columns: 1fr; } }
+.quiz-opt { text-align: left; font-size: 16px; font-weight: 700; padding: 14px; border-radius: 14px; border: 2px solid var(--edge); background: #fff; box-shadow: 0 3px 0 var(--edge); cursor: pointer; }
+.quiz-opt:hover:not(:disabled) { border-color: var(--green); }
+.quiz-opt.right { background: #E3F2EB; border-color: var(--soc); color: var(--green-dark); }
+.quiz-opt.wrong { background: #FFE3E3; border-color: var(--red); color: #A12B2F; }
+.quiz-opt:disabled { cursor: default; }
+.quiz-cta { margin-top: 14px; border-radius: 16px; padding: 14px; background: #FFF8E1; border: 2px dashed #F2C65A; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.quiz-cta b { font-family: 'Jua', sans-serif; font-weight: 400; font-size: 18px; }
 .fade-in { animation: fadeIn .35s ease-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .fade-in, .delta, .shake, .crisis { animation: none; } }
@@ -449,6 +463,7 @@ function newGame(name, focus) {
     outingCount: 0, caughtCount: 0,
     pendingRandom: null, result: null,
     turnStartStats: null, summary: null,
+    quizSeen: [], quizDone: false, quizBonus: 0,
     exams: [], rivalWins: 0, rivalLosses: 0,
     log: [], ending: null,
   };
@@ -462,6 +477,7 @@ function startTurn(s) {
   s.spun = false; s.lastSpin = null; s.boughtThisTurn = 0;
   s.calendarQueue = calendarIdsForTurn(s.turn); s.calendarIndex = 0;
   s.eventDone = false; s.examIndex = 0; s.homeChoice = null;
+  s.quizDone = false; s.quizBonus = 0;
   s.pendingRandom = null; s.result = null; s.summary = null;
   s.turnStartStats = Object.assign({}, s.stats);
   s.turnStartStress = s.stress;
@@ -1250,7 +1266,7 @@ function afterRandomResult(s) {
 // ---------- 12. 시험: 모의고사(9등급) + 중간·기말(내신 5등급) + 라이벌 ----------
 // 시험 실력 = 지능 - 체력 페널티 - 스트레스 페널티
 function examPower(s) {
-  let power = s.stats.int;
+  let power = s.stats.int + (s.quizBonus || 0);   // 벼락치기 퀴즈 보너스
   if (s.stats.hp < 40) power -= (40 - s.stats.hp);
   if (s.stress >= CONFIG.STRESS_HIGH) power -= Math.round((s.stress - CONFIG.STRESS_HIGH + 10) / 2);
   return power;
@@ -1322,11 +1338,136 @@ function afterExamResult(s) {
   if (s.phase !== 'examResult') return;
   s.result = null;
   s.examIndex += 1;
+  s.quizDone = false; s.quizBonus = 0;
   goExamOrEnd(s);
 }
 function goExamOrEnd(s) {
   if (s.examIndex < examsForTurn(s.turn).length) s.phase = 'exam';
   else endTurn(s);
+}
+
+// ---------- 12-1. 시험 전 벼락치기 퀴즈 ----------
+// 시험(또는 수능) 직전에 한 번 풀 수 있다. 맞힌 만큼 시험 실력이 오른다.
+const QUIZ = {
+  COUNT: 3,            // 일반 시험 전 문제 수
+  FINAL_COUNT: 5,      // 수능 전 문제 수
+  PER_CORRECT: 3,      // 한 문제 맞힐 때마다 시험 실력 +3
+  PERFECT_BONUS: 3,    // 전부 맞히면 추가 보너스
+  WRONG_STRESS: 2,     // 틀리면 스트레스 +2
+  SECONDS: 15,         // 문제당 제한 시간
+};
+
+// a: 정답 / w: 오답 3개. 화면에서 보기 순서를 섞는다.
+const QUIZ_BANK = [
+  // 국어
+  { id: 'k1', subj: '국어', q: '"가랑비에 옷 젖는 줄 모른다"의 뜻은?', a: '사소한 것도 쌓이면 크게 된다', w: ['급할수록 돌아가야 한다', '남의 말을 쉽게 믿으면 안 된다', '비 오는 날엔 우산을 챙겨야 한다'] },
+  { id: 'k2', subj: '국어', q: '맞춤법이 올바른 것은?', a: '어이없다', w: ['어의없다', '어히없다', '어이업다'] },
+  { id: 'k3', subj: '국어', q: '"금시초문(今始初聞)"의 뜻은?', a: '이제 처음 들음', w: ['오래전부터 알고 있음', '처음과 끝이 같음', '듣고도 못 들은 척함'] },
+  { id: 'k4', subj: '국어', q: '표준어는?', a: '설거지', w: ['설겆이', '설걷이', '설것이'] },
+  { id: 'k5', subj: '국어', q: '"오매불망(寤寐不忘)"의 뜻은?', a: '자나 깨나 잊지 못함', w: ['매우 바빠 쉴 틈이 없음', '잠을 이루지 못함', '오래 기다림'] },
+  { id: 'k6', subj: '국어', q: '훈민정음 초성의 기본자는 모두 몇 개일까? (ㄱ, ㄴ, ㅁ, ㅅ, ㅇ)', a: '5개', w: ['3개', '7개', '17개'] },
+  { id: 'k7', subj: '국어', q: '맞춤법이 올바른 문장은?', a: '왠지 기분이 좋다', w: ['웬지 기분이 좋다', '왠일로 일찍 왔니?', '웬지 모르게 설렌다'] },
+  { id: 'k8', subj: '국어', q: '"소 잃고 외양간 고친다"와 뜻이 가장 비슷한 한자 성어는?', a: '망우보뢰(亡牛補牢)', w: ['일석이조(一石二鳥)', '동문서답(東問西答)', '고진감래(苦盡甘來)'] },
+  { id: 'k9', subj: '국어', q: '"고진감래(苦盡甘來)"의 뜻은?', a: '고생 끝에 즐거움이 온다', w: ['쓴 약이 몸에 좋다', '단것을 너무 먹으면 탈이 난다', '처음엔 쉽지만 나중엔 어렵다'] },
+  // 영어
+  { id: 'e1', subj: '영어', q: '"procrastinate"의 뜻은?', a: '미루다', w: ['서두르다', '포기하다', '집중하다'] },
+  { id: 'e2', subj: '영어', q: 'go의 과거분사는?', a: 'gone', w: ['went', 'goed', 'going'] },
+  { id: 'e3', subj: '영어', q: 'I have lived here ___ 2020.', a: 'since', w: ['for', 'during', 'while'] },
+  { id: 'e4', subj: '영어', q: '"abundant"의 뜻은?', a: '풍부한', w: ['부족한', '위험한', '정확한'] },
+  { id: 'e5', subj: '영어', q: '"dormitory"의 뜻은?', a: '기숙사', w: ['교무실', '도서관', '급식실'] },
+  { id: 'e6', subj: '영어', q: '"rapid"와 뜻이 가장 비슷한 단어는?', a: 'fast', w: ['slow', 'quiet', 'heavy'] },
+  { id: 'e7', subj: '영어', q: '"Break a leg!"는 공연 전에 어떤 뜻으로 쓰는 말일까?', a: '행운을 빌어!', w: ['다리 조심해!', '그만둬!', '서둘러!'] },
+  { id: 'e8', subj: '영어', q: 'She ___ to school every day.', a: 'goes', w: ['go', 'going', 'gone'] },
+  { id: 'e9', subj: '영어', q: '"reluctant"의 뜻은?', a: '꺼리는', w: ['열정적인', '확실한', '친절한'] },
+  // 한국사
+  { id: 'h1', subj: '한국사', q: '훈민정음을 창제한 왕은?', a: '세종', w: ['태종', '정조', '영조'] },
+  { id: 'h2', subj: '한국사', q: '임진왜란이 일어난 해는?', a: '1592년', w: ['1392년', '1636년', '1876년'] },
+  { id: 'h3', subj: '한국사', q: '임진왜란 때 영의정을 지낸 류성룡이 전쟁을 돌아보며 쓴 책은?', a: '징비록', w: ['난중일기', '목민심서', '열하일기'] },
+  { id: 'h4', subj: '한국사', q: '이순신 장군이 전쟁 중에 쓴 일기는?', a: '난중일기', w: ['징비록', '동의보감', '경국대전'] },
+  { id: 'h5', subj: '한국사', q: '조선을 세운 사람은?', a: '이성계', w: ['왕건', '정도전', '이방원'] },
+  { id: 'h6', subj: '한국사', q: '고려를 세운 사람은?', a: '왕건', w: ['궁예', '견훤', '이성계'] },
+  { id: 'h7', subj: '한국사', q: '3·1 운동이 일어난 해는?', a: '1919년', w: ['1910년', '1945년', '1929년'] },
+  { id: 'h8', subj: '한국사', q: '한글날은 몇 월 며칠일까?', a: '10월 9일', w: ['10월 3일', '8월 15일', '5월 15일'] },
+  { id: 'h9', subj: '한국사', q: '『목민심서』를 쓴 실학자는?', a: '정약용', w: ['박지원', '이황', '김정희'] },
+  // 수학 (고정 문제, 계산 문제는 아래에서 자동 생성)
+  { id: 'm1', subj: '수학', q: '삼각형의 세 내각의 합은?', a: '180°', w: ['90°', '270°', '360°'] },
+  { id: 'm2', subj: '수학', q: '소수(素數)가 아닌 것은?', a: '9', w: ['7', '11', '13'] },
+  { id: 'm3', subj: '수학', q: 'log₁₀ 1000 의 값은?', a: '3', w: ['10', '100', '2'] },
+  { id: 'm4', subj: '수학', q: 'sin 30° 의 값은?', a: '1/2', w: ['√3/2', '1', '√2/2'] },
+  { id: 'm5', subj: '수학', q: '2¹⁰ 의 값은?', a: '1024', w: ['512', '1000', '2048'] },
+  { id: 'm6', subj: '수학', q: '원의 넓이를 구하는 식은? (반지름 r)', a: 'πr²', w: ['2πr', 'πr', '2πr²'] },
+  // 과학
+  { id: 's1', subj: '과학', q: '물의 화학식은?', a: 'H₂O', w: ['CO₂', 'O₂', 'H₂O₂'] },
+  { id: 's2', subj: '과학', q: '태양계에서 가장 큰 행성은?', a: '목성', w: ['토성', '지구', '해왕성'] },
+  { id: 's3', subj: '과학', q: '주기율표의 1번 원소는?', a: '수소', w: ['헬륨', '산소', '탄소'] },
+  { id: 's4', subj: '과학', q: '식물이 광합성을 하면서 내보내는 기체는?', a: '산소', w: ['이산화탄소', '질소', '수소'] },
+  { id: 's5', subj: '과학', q: '소리가 전달되지 않는 곳은?', a: '진공', w: ['물속', '쇠막대', '공기 중'] },
+  { id: 's6', subj: '과학', q: 'F = ma 는 누구의 운동 법칙일까?', a: '뉴턴', w: ['아인슈타인', '갈릴레이', '케플러'] },
+  { id: 's7', subj: '과학', q: '빛의 속력에 가장 가까운 값은?', a: '약 30만 km/s', w: ['약 340 m/s', '약 3만 km/s', '약 300만 km/s'] },
+  { id: 's8', subj: '과학', q: '1953년 DNA 이중 나선 구조를 발표한 과학자는?', a: '왓슨과 크릭', w: ['멘델', '다윈', '파스퇴르'] },
+  // 안동·풍산 & 상식
+  { id: 'a1', subj: '안동 상식', q: '하회마을을 휘감아 흐르는 강은?', a: '낙동강', w: ['한강', '금강', '섬진강'] },
+  { id: 'a2', subj: '안동 상식', q: '병산서원에 모셔진, 임진왜란 때의 재상은?', a: '류성룡', w: ['이황', '이순신', '정약용'] },
+  { id: 'a3', subj: '안동 상식', q: '도산서원과 가장 관련이 깊은 유학자는?', a: '퇴계 이황', w: ['율곡 이이', '다산 정약용', '우암 송시열'] },
+  { id: 'a4', subj: '안동 상식', q: '하회마을이 양동마을과 함께 유네스코 세계유산에 오른 해는?', a: '2010년', w: ['2000년', '2015년', '1995년'] },
+  { id: 'a5', subj: '안동 상식', q: '1999년 하회마을을 방문한 영국 여왕은?', a: '엘리자베스 2세', w: ['빅토리아 여왕', '메리 2세', '앤 여왕'] },
+  { id: 'a6', subj: '안동 상식', q: '안동이 속한 광역자치단체는?', a: '경상북도', w: ['경상남도', '충청북도', '강원특별자치도'] },
+  { id: 'a7', subj: '안동 상식', q: '하회별신굿탈놀이에 쓰이는 탈은?', a: '하회탈', w: ['봉산탈', '북청사자탈', '처용탈'] },
+  { id: 'a8', subj: '안동 상식', q: '병산서원과 도산서원이 포함된 "한국의 서원"이 유네스코 세계유산에 오른 해는?', a: '2019년', w: ['2010년', '2014년', '2021년'] },
+  { id: 'a9', subj: '안동 상식', q: '문경새재 과거길은 옛날 선비들이 어디로 과거를 보러 가던 길일까?', a: '한양', w: ['경주', '평양', '개성'] },
+  { id: 'g1', subj: '상식', q: '1년 중 낮이 가장 긴 절기는?', a: '하지', w: ['동지', '춘분', '추분'] },
+  { id: 'g2', subj: '상식', q: '올림픽 오륜기의 고리는 몇 개일까?', a: '5개', w: ['4개', '6개', '7개'] },
+  { id: 'g3', subj: '상식', q: '대학수학능력시험(수능)은 보통 몇 월에 치를까?', a: '11월', w: ['9월', '10월', '12월'] },
+];
+
+const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const shuffle = arr => { const r = arr.slice(); for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
+
+// 숫자 오답 3개 만들기 (정답 근처의 서로 다른 값)
+function nearWrongs(ans, spread) {
+  const set = new Set();
+  while (set.size < 3) { const d = randInt(-spread, spread); if (d !== 0 && ans + d >= 0) set.add(ans + d); }
+  return [...set].map(String);
+}
+
+// 학년이 올라갈수록 어려운 계산 문제
+function makeMathQuestion(grade) {
+  const type = randInt(0, grade + 1);
+  if (type === 0) { const a = randInt(12, 49), b = randInt(3, 9); return { subj: '수학', q: `${a} × ${b} = ?`, a: String(a * b), w: nearWrongs(a * b, 12) }; }
+  if (type === 1) { const p = [10, 20, 25, 30, 40, 75][randInt(0, 5)], n = [40, 60, 80, 120, 200, 360][randInt(0, 5)]; const ans = n * p / 100; return { subj: '수학', q: `${n}의 ${p}%는?`, a: String(ans), w: nearWrongs(ans, 15) }; }
+  if (type === 2) { const x = randInt(2, 12), a = randInt(2, 7), b = randInt(1, 20); return { subj: '수학', q: `${a}x + ${b} = ${a * x + b} 일 때, x = ?`, a: String(x), w: nearWrongs(x, 4) }; }
+  if (type === 3) { const n = randInt(11, 19); return { subj: '수학', q: `${n}² = ?`, a: String(n * n), w: nearWrongs(n * n, 20) }; }
+  const r1 = randInt(1, 9), r2 = randInt(1, 9);
+  return { subj: '수학', q: `x² − ${r1 + r2}x + ${r1 * r2} = 0 의 두 근의 합은?`, a: String(r1 + r2), w: nearWrongs(r1 + r2, 5) };
+}
+
+// 이번 퀴즈 문제 뽑기 (한 판 안에서는 같은 고정 문제가 다시 안 나온다)
+function makeQuiz(s, count) {
+  if (!s.quizSeen) s.quizSeen = [];
+  let pool = QUIZ_BANK.filter(q => !s.quizSeen.includes(q.id));
+  if (pool.length < count) { s.quizSeen = []; pool = QUIZ_BANK.slice(); }
+  const qs = [];
+  const mathCount = Math.random() < 0.5 ? 1 : 0;
+  for (const q of shuffle(pool).slice(0, count - mathCount)) { s.quizSeen.push(q.id); qs.push(q); }
+  for (let i = 0; i < mathCount; i++) qs.push(makeMathQuestion(gradeOf(s.turn)));
+  return shuffle(qs).map(q => ({ subj: q.subj, q: q.q, a: q.a, options: shuffle([q.a, ...q.w]) }));
+}
+
+// 퀴즈를 시작할 수 있는지 (시험·수능 화면에서 한 번만)
+function canQuiz(s) { return (s.phase === 'exam' || s.phase === 'final') && !s.quizDone; }
+function startQuiz(s) {
+  if (!canQuiz(s)) return null;
+  s.quizDone = true;
+  return makeQuiz(s, s.phase === 'final' ? QUIZ.FINAL_COUNT : QUIZ.COUNT);
+}
+// 퀴즈 결과 반영: 맞힌 수 → 시험 실력 보너스, 틀린 수 → 스트레스
+function finishQuiz(s, correct, total) {
+  let bonus = correct * QUIZ.PER_CORRECT;
+  if (correct === total) bonus += QUIZ.PERFECT_BONUS;
+  s.quizBonus = bonus;
+  const stress = changeStat(s, 'stress', (total - correct) * QUIZ.WRONG_STRESS);
+  addLog(s, '🧠', `벼락치기 퀴즈 ${correct}/${total} → 시험 실력 +${bonus}${stress ? `, 스트레스 +${stress}` : ''}`);
+  return { bonus: bonus, stress: stress };
 }
 
 // ---------- 13. 턴 종료: 자연 감소 + 스트레스 + 전학 판정 ----------
@@ -1447,6 +1588,7 @@ if (typeof module !== 'undefined') {
     CONFIG, STATS, STAT_NAME, ROULETTE, ITEMS, SPECIAL_EVENTS, VACATION_OPTIONS, RANDOM_EVENTS,
     formatWon, newGame, startTurn, spinRoulette, chooseHome, BIWEEKLY_OPTIONS, goShop, buyItem, cannotBuyReason, leaveShop,
     getCalendarEvent, chooseCalendar, afterCalendarResult, examsForTurn, currentExam,
+    QUIZ, QUIZ_BANK, makeQuiz, startQuiz, finishQuiz, canQuiz,
     getSpecialOptions, doSpecial, afterEventResult, getPendingRandom, canChoose, chooseRandom,
     afterRandomResult, takeExam, afterExamResult, nextTurn, takeFinalExam,
     gradeOdds, suneungOdds, isVacation, isExamTurn, maxStatKey, minStatKey, examPower,
@@ -1467,7 +1609,7 @@ const SAVE_KEY = 'pungsan-graduation-save-v3';
 // ---------- 자동 업데이트 ----------
 // 새 버전을 올릴 때: 아래 APP_VERSION 과 version.json 의 "version" 을 같은 값으로 바꾼다.
 // 그러면 접속 중인 사람은 1분 안에 알림을 받고, 지금 판이 끝나면 새 버전으로 바뀐다.
-const APP_VERSION = '2026.11.24-4';
+const APP_VERSION = '2026.11.24-5';
 const VERSION_CHECK_MS = 60 * 1000;
 let remoteVersion = null;     // 서버에 올라온 최신 버전
 let newVersionReady = false;  // 새 버전이 기다리는 중인지
@@ -1518,6 +1660,9 @@ let wheelAngle = 0;      // 돌림판의 현재 회전 각도
 let logOpen = false;     // 기록장이 펼쳐져 있는지
 let resetArmed = false;  // '처음부터' 버튼을 한 번 눌렀는지
 let lastPhase = null;
+let quiz = null;         // 진행 중인 벼락치기 퀴즈 { list, idx, correct, picked, start }
+let quizSummary = null;  // 방금 끝난 퀴즈 결과 (시험 화면에 표시)
+let quizTimer = null;
 
 // ---------- 자동 저장 (브라우저 localStorage) ----------
 function saveGame() {
@@ -1888,6 +2033,84 @@ function calendarHTML() {
 
 const GRADE_COLOR = { 1: '#2FB344', 2: '#4C6EF5', 3: '#E8A200', 4: '#F76707', 5: '#E5484D' };
 
+// 시험·수능 화면의 '벼락치기 퀴즈' 안내 칸
+function quizCtaHTML() {
+  const n = s.phase === 'final' ? QUIZ.FINAL_COUNT : QUIZ.COUNT;
+  if (canQuiz(s)) return `
+    <div class="quiz-cta">
+      <div><b>🧠 시험 직전 벼락치기 퀴즈</b><br><span class="small">${n}문제 · 문제당 ${QUIZ.SECONDS}초 · 1문제 맞힐 때마다 시험 실력 +${QUIZ.PER_CORRECT}, 전부 맞히면 +${QUIZ.PERFECT_BONUS} 더! (틀리면 스트레스 +${QUIZ.WRONG_STRESS})</span></div>
+      <button class="btn yellow" data-action="quizStart">퀴즈 풀기</button>
+    </div>`;
+  if (quizSummary) return `<div class="info">🧠 벼락치기 퀴즈 <b>${quizSummary.correct}/${quizSummary.total}</b> 정답 → 시험 실력 <b>+${quizSummary.bonus}</b>${quizSummary.stress ? ` · 스트레스 +${quizSummary.stress}` : ''}. 위 확률에 이미 반영됐다!</div>`;
+  return '';
+}
+
+function quizHTML() {
+  const q = quiz.list[quiz.idx];
+  const done = quiz.picked !== null;
+  const opts = q.options.map((o, i) => {
+    let cls = '';
+    if (done && o === q.a) cls = 'right';
+    else if (done && i === quiz.picked) cls = 'wrong';
+    return `<button class="quiz-opt ${cls}" data-action="quizAnswer" data-id="${i}" ${done ? 'disabled' : ''}>${esc(o)}</button>`;
+  }).join('');
+  let feedback = '';
+  if (done) feedback = quiz.picked === -1 ? `<div class="alert">⏰ 시간 초과! 정답은 「${esc(q.a)}」</div>` : (q.options[quiz.picked] === q.a ? '<div class="info">⭕ 정답! 시험 실력 +' + QUIZ.PER_CORRECT + '</div>' : `<div class="alert">❌ 땡! 정답은 「${esc(q.a)}」</div>`);
+  return `
+    <div class="card stage">
+      ${stepsHTML()}
+      <span class="date-tag">🧠 벼락치기 퀴즈 · ${quiz.idx + 1}/${quiz.list.length} · 맞힌 문제 ${quiz.correct}</span>
+      <div class="quiz-box">
+        <span class="step-tag" style="justify-self:start">${q.subj}</span>
+        <div class="quiz-q">${esc(q.q)}</div>
+        <div class="quiz-timer" id="quizTimer"><i style="width:100%"></i></div>
+        <div class="quiz-opts">${opts}</div>
+        ${feedback}
+      </div>
+    </div>`;
+}
+
+// 퀴즈 진행
+function beginQuiz() {
+  const list = startQuiz(s);
+  if (!list) return;
+  quiz = { list: list, idx: 0, correct: 0, picked: null, start: Date.now() };
+  quizSummary = null;
+  saveGame();
+  render();
+  runQuizTimer();
+}
+function runQuizTimer() {
+  clearInterval(quizTimer);
+  quizTimer = setInterval(() => {
+    if (!quiz || quiz.picked !== null) { clearInterval(quizTimer); return; }
+    const left = 1 - (Date.now() - quiz.start) / (QUIZ.SECONDS * 1000);
+    const bar = document.getElementById('quizTimer');
+    if (bar) { bar.firstElementChild.style.width = Math.max(0, left * 100) + '%'; bar.classList.toggle('hurry', left < 0.3); }
+    if (left <= 0) answerQuiz(-1);
+  }, 100);
+}
+function answerQuiz(pick) {
+  if (!quiz || quiz.picked !== null) return;
+  clearInterval(quizTimer);
+  quiz.picked = pick;
+  const q = quiz.list[quiz.idx];
+  if (pick >= 0 && q.options[pick] === q.a) quiz.correct += 1;
+  render();
+  setTimeout(() => {
+    if (!quiz) return;
+    if (quiz.idx + 1 < quiz.list.length) {
+      quiz.idx += 1; quiz.picked = null; quiz.start = Date.now();
+      render(); runQuizTimer();
+    } else {
+      const res = finishQuiz(s, quiz.correct, quiz.list.length);
+      quizSummary = { correct: quiz.correct, total: quiz.list.length, bonus: res.bonus, stress: res.stress };
+      quiz = null;
+      render();
+    }
+  }, 1100);
+}
+
 function gradeColor(grade, type) { return GRADE_COLOR[type === 'mock' ? Math.min(5, Math.ceil(grade / 2)) : grade]; }
 
 function examHTML() {
@@ -1909,6 +2132,7 @@ function examHTML() {
       <div class="odds">${rows}</div>
       ${s.stats.hp < 40 ? `<div class="alert">💪 체력이 ${s.stats.hp}라 집중력이 떨어졌다. 시험 실력 -${40 - s.stats.hp}</div>` : ''}
       ${s.stress >= CONFIG.STRESS_HIGH ? `<div class="alert">😵 스트레스 ${s.stress}! 머리가 하얘진다. 시험 실력 -${Math.round((s.stress - CONFIG.STRESS_HIGH + 10) / 2)}</div>` : ''}
+      ${quizCtaHTML()}
       <div class="rival">⚔️ 라이벌 ${RIVAL_NAME}도 이번 시험을 본다. 등급이 더 높으면 명성 +4 · 스트레스 -5</div>
       <div class="info">${mock
         ? `보상: 1등급 명성 +${MOCK_FAME[1]} · 2등급 +${MOCK_FAME[2]} · 6등급 이하 명성 감소<br>낮은 등급일수록 스트레스가 오른다 (9등급 +${MOCK_STRESS[9]})`
@@ -1996,7 +2220,7 @@ function finalHTML() {
       <h2>🎓 수능 & 졸업 사정</h2>
       <p class="lead">3년의 마지막 관문. 모든 능력치가 ${CONFIG.DANGER_LINE} 이상이면 졸업, 수능 등급으로 진로가 정해진다.</p>
       ${checks}
-      ${low.length ? '<div class="alert">⛔ 기준 미달 능력치가 있어 졸업할 수 없다.</div>' : `<h3>예상 수능 등급</h3><div class="odds">${odds}</div>${s.stress >= CONFIG.STRESS_HIGH ? `<div class="alert">😵 스트레스 ${s.stress}… 수능 실력이 깎인다.</div>` : ''}`}
+      ${low.length ? '<div class="alert">⛔ 기준 미달 능력치가 있어 졸업할 수 없다.</div>' : `<h3>예상 수능 등급</h3><div class="odds">${odds}</div>${quizCtaHTML()}${s.stress >= CONFIG.STRESS_HIGH ? `<div class="alert">😵 스트레스 ${s.stress}… 수능 실력이 깎인다.</div>` : ''}`}
       <div class="btn-row"><button class="btn yellow" data-action="final">${low.length ? '결과 확인' : '✍️ 수능 응시'}</button></div>
     </div>`;
 }
@@ -2071,6 +2295,7 @@ function logHTML() {
 }
 
 function stageHTML() {
+  if (quiz && (s.phase === 'exam' || s.phase === 'final')) return quizHTML();
   switch (s.phase) {
     case 'welcome': return welcomeHTML();
     case 'roulette': return rouletteHTML();
@@ -2180,10 +2405,11 @@ function handleAction(action, id) {
     return;
   }
   justUpdated = false;
+  if (['reset', 'continue', 'focus', 'new', 'home'].includes(action)) { quiz = null; quizSummary = null; clearInterval(quizTimer); }
   switch (action) {
-    case 'new': s = null; preScreen = 'name'; draftName = ''; break;
+    case 'new': s = null; preScreen = 'name'; draftName = ''; quiz = null; quizSummary = null; break;
     case 'continue': s = loadGame(); prevStats = null; lastPhase = null; wheelAngle = 0; break;
-    case 'home': s = null; preScreen = 'title'; break;
+    case 'home': s = null; preScreen = 'title'; quiz = null; quizSummary = null; break;
     case 'setName': {
       const input = document.getElementById('nameInput');
       const name = input.value.trim();
@@ -2204,10 +2430,12 @@ function handleAction(action, id) {
     case 'calendarChoice': chooseCalendar(s, Number(id)); break;
     case 'afterCalendar': afterCalendarResult(s); break;
     case 'afterRandom': afterRandomResult(s); break;
-    case 'exam': takeExam(s); break;
+    case 'quizStart': beginQuiz(); return;
+    case 'quizAnswer': answerQuiz(Number(id)); return;
+    case 'exam': takeExam(s); quizSummary = null; break;
     case 'afterExam': afterExamResult(s); break;
     case 'nextTurn': nextTurn(s); break;
-    case 'final': takeFinalExam(s); break;
+    case 'final': takeFinalExam(s); quizSummary = null; break;
     case 'reset':
       if (!resetArmed) { resetArmed = true; break; }
       resetArmed = false;
