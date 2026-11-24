@@ -405,7 +405,18 @@ const ROOMMATES = [
   { id: 'daehyun', name: '김대현', short: '대현', type: '운동광', emoji: '🏀', desc: '새벽 6시에 운동장을 뛰는 룸메. 체단실 출석률 100%.' },
   { id: 'jaewon',  name: '정재원', short: '재원', type: '조용한 룸메', emoji: '🎧', desc: '말수가 적고 늘 이어폰을 끼고 있는 룸메. 무슨 생각을 하는지 잘 모르겠다.' },
 ];
-function roommateOf(s) { return ROOMMATES.find(r => r.id === s.roommate) || ROOMMATES[0]; }
+function roommateById(id) { return ROOMMATES.find(r => r.id === id) || ROOMMATES[0]; }
+function roommatesOf(s) { return s.roommates.map(roommateById); }
+function hasRoommate(s, id) { return s.roommates.includes(id); }
+function affOf(s, id) { return s.affs[id] || 0; }
+// 방 분위기 = 두 룸메 친밀도의 평균
+function avgAff(s) { return Math.round(s.roommates.reduce((t, id) => t + s.affs[id], 0) / s.roommates.length); }
+function setAff(s, id, v) {
+  s.affs[id] = clamp(v, 0, 100);
+  s.maxAff = Math.max(s.maxAff || 0, s.affs[id]); s.minAff = Math.min(s.minAff === undefined ? 100 : s.minAff, s.affs[id]);
+  s.aff = avgAff(s);
+}
+function closetName(s, loc) { return loc === 'me' ? '내 옷장' : `${roommateById(loc).short}이 옷장`; }
 const TRACK_NAME = { lib: '📖 인문·사회(문과)', sci: '🔬 자연·공학(이과)' };
 
 // 기숙사 반입 금지물품: 귀가 후 복귀할 때 몰래 챙겨 간다. 갖고 있으면 매 턴 효과가 있지만 방 검사에 걸리면 압수 + 벌점.
@@ -417,6 +428,12 @@ const CONTRABAND = [
   { id: 'console', name: '휴대용 게임기', emoji: '🎮', desc: '자기 전 딱 한 판. 매 턴 스트레스 -5, 지능 -1' },
 ];
 function contraOf(id) { return CONTRABAND.find(c => c.id === id); }
+// 받침에 맞는 조사 고르기: josa('전기포트', '이', '가') → '가'
+function josa(word, withBatchim, without) {
+  const code = word.charCodeAt(word.length - 1) - 0xAC00;
+  if (code < 0 || code > 11171) return without;
+  return code % 28 ? withBatchim : without;
+}
 
 // ---------- 3. 작은 도우미 함수들 ----------
 function formatWon(n) {
@@ -465,9 +482,11 @@ function changeStat(s, key, delta) {
   if (key === 'stress') { const b = s.stress; s.stress = clamp(b + delta, 0, CONFIG.STRESS_MAX); return s.stress - b; }
   if (key === 'penalty') { const b = s.penalty; s.penalty = Math.max(0, b + delta); if (s.penalty > b) s.penaltyTotal = (s.penaltyTotal || 0) + (s.penalty - b); return s.penalty - b; }
   if (key === 'aff') {
-    const b = s.aff; s.aff = clamp(b + delta, 0, 100);
-    s.maxAff = Math.max(s.maxAff || 0, s.aff); s.minAff = Math.min(s.minAff === undefined ? 100 : s.minAff, s.aff);
-    return s.aff - b;
+    // 보통은 두 룸메 모두에게, 특정 룸메 사건이면 그 룸메에게만
+    const targets = s._affTo ? [s._affTo] : s.roommates;
+    const b = targets.length === 1 ? s.affs[targets[0]] : s.aff;
+    for (const id of targets) setAff(s, id, s.affs[id] + delta);
+    return (targets.length === 1 ? s.affs[targets[0]] : s.aff) - b;
   }
   if (delta > 0 && s.stats[key] >= CONFIG.SOFT_CAP) delta = Math.ceil(delta / 2);
   const before = s.stats[key];
@@ -491,7 +510,7 @@ function changesToText(real) {
 // ---------- 5. 새 게임 ----------
 function newGame(name, focus) {
   const s = {
-    version: 5,
+    version: 6,
     name: name, focus: focus, turn: 1, money: 0,
     stats: { int: CONFIG.START_STAT, hp: CONFIG.START_STAT, soc: CONFIG.START_STAT, fame: CONFIG.START_STAT },
     lowStreak: { int: 0, hp: 0, soc: 0, fame: 0 },
@@ -509,17 +528,17 @@ function newGame(name, focus) {
     pendingRandom: null, result: null,
     turnStartStats: null, summary: null,
     quizSeen: [], quizDone: false, quizBonus: 0, quizCorrectTotal: 0, quizPerfectFinal: false,
-    roommate: ROOMMATES[Math.floor(Math.random() * ROOMMATES.length)].id, aff: 50, maxAff: 50, minAff: 50,
+    roommates: shuffle(ROOMMATES.map(r => r.id)).slice(0, 2), affs: {}, aff: 50, maxAff: 50, minAff: 50,
     track: null, tripCourse: null, presidentTerms: 0, penaltyTotal: 0,
     inv: { disguise: 0, hint: 0 },
-    contra: [], packResult: null,
+    contra: [], contraLoc: {}, packResult: null,
     exams: [], rivalWins: 0, rivalLosses: 0,
     log: [], ending: null,
   };
   s.stats[focus] += CONFIG.FOCUS_BONUS;
   addLog(s, '🏫', `${name}, 풍산고 입학! 오늘부터 기숙사 생활 시작 (${STAT_NAME[focus]} 집중 육성)`);
-  const rm = roommateOf(s);
-  addLog(s, '🛏️', `룸메이트는 ${rm.name} (${rm.emoji} ${rm.type})`);
+  for (const id of s.roommates) s.affs[id] = 50;
+  addLog(s, '🛏️', `3인실 룸메이트: ${roommatesOf(s).map(r => `${r.name}(${r.emoji} ${r.type})`).join(', ')}`);
   return s;
 }
 
@@ -582,21 +601,24 @@ function chooseHome(s, id) {
 function goShop(s) { if (s.spun && s.homeChoice) s.phase = 'shop'; }
 
 // 기숙사로 돌아가기 전 짐 싸기: 금지물품 하나를 몰래 챙길 수 있다 (한 번에 하나)
-function packItem(s, id) {
+function packItem(s, id, loc) {
   if (s.phase !== 'pack' || s.packResult) return null;
   const c = contraOf(id);
   if (!c || s.contra.includes(id)) return null;
+  if (loc !== 'me' && !hasRoommate(s, loc)) return null;
   // 조용한 룸메(재원)는 짐 검사 줄에서 슬쩍 가려 준다
-  const catchP = CONFIG.CONTRA_ENTRY_CATCH - (s.roommate === 'jaewon' && s.aff >= 50 ? 0.1 : 0);
+  const catchP = CONFIG.CONTRA_ENTRY_CATCH - (hasRoommate(s, 'jaewon') && affOf(s, 'jaewon') >= 50 ? 0.1 : 0);
   if (roll(catchP)) {
     const real = applyChanges(s, { penalty: CONFIG.CONTRA_PENALTY, stress: 5 });
-    s.packResult = { ok: false, text: `기숙사 입구 짐 검사! 가방 속 ${c.emoji} ${c.name}이(가) 딱 걸렸다. 압수.`, changes: real };
+    s.packResult = { ok: false, text: `기숙사 입구 짐 검사! 가방 속 ${c.emoji} ${c.name}${josa(c.name, '이', '가')} 딱 걸렸다. 압수.`, changes: real };
     addLog(s, '🚫', `${c.name} 반입 시도 → 짐 검사 적발, ${changesToText(real)}`);
     if (checkPenalty(s)) return s.packResult;
   } else {
     s.contra.push(id);
-    s.packResult = { ok: true, text: `${c.emoji} ${c.name}을(를) 옷 사이에 숨겨 무사히 들여왔다. 사물함 깊숙이 보관.`, changes: {} };
-    addLog(s, c.emoji, `${c.name} 몰래 반입 성공`);
+    s.contraLoc[id] = loc;
+    const where = loc === 'me' ? '내 옷장 깊숙이 숨겼다.' : `${roommateById(loc).short}이가 샤워하러 간 사이, ${roommateById(loc).short}이 옷장 맨 아래 칸에 슬쩍 밀어 넣었다. 🤫`;
+    s.packResult = { ok: true, text: `${c.emoji} ${c.name}${josa(c.name, '을', '를')} 옷 사이에 숨겨 무사히 들여왔다. ${where}`, changes: {} };
+    addLog(s, c.emoji, `${c.name} 몰래 반입 성공 → ${closetName(s, loc)}`);
   }
   return s.packResult;
 }
@@ -622,6 +644,28 @@ function buyItem(s, itemId) {
 function leaveShop(s) { if (s.phase === 'shop') s.phase = s.calendarQueue.length ? 'calendar' : 'event'; }
 
 // ---------- 8. 벌점 판정 (선택 결과가 나올 때마다 확인) ----------
+// 금지물품 압수: 어디 옷장에서 나왔느냐에 따라 결과가 다르다
+function confiscate(s, id) {
+  const c = contraOf(id);
+  const loc = s.contraLoc[id] || 'me';
+  s.contra = s.contra.filter(x => x !== id);
+  delete s.contraLoc[id];
+  if (loc === 'me') return { text: `${c.emoji} ${c.name} (내 옷장) 압수, 벌점 +${CONFIG.CONTRA_PENALTY}`, deltas: { penalty: CONFIG.CONTRA_PENALTY, stress: 4 } };
+  const rm = roommateById(loc);
+  if (loc === 'yumin') return {
+    text: `${c.emoji} ${c.name}${josa(c.name, '이', '가')} 유민이 옷장에서 나왔다! 유민이가 억울하게 벌점을 받았는데… "됐어, 전기포트로 라면 맨날 얻어먹었잖아. 봐준다." 유민이가 용서해 줬다.`,
+    deltas: { stress: 2 }, forgiven: true };
+  setAff(s, loc, 0);
+  return {
+    text: `${c.emoji} ${c.name}${josa(c.name, '이', '가')} ${rm.short}이 옷장에서 나왔다! 억울하게 벌점을 받은 ${rm.short}이가 범인이 너라는 걸 알아냈다. 소문이 반 전체에 퍼졌다. (${rm.short}이 친밀도 0)`,
+    deltas: { soc: -15, stress: 6 }, betrayed: loc };
+}
+function mergeDeltas(list) {
+  const out = {};
+  for (const d of list) for (const k in d) out[k] = (out[k] || 0) + d[k];
+  return out;
+}
+
 function checkPenalty(s) {
   if (s.penalty >= CONFIG.PENALTY_OUT) {
     s.ending = { type: 'expel', reason: `기숙사 벌점 ${s.penalty}점 누적 → 강제 퇴사, 퇴학 처리` };
@@ -1011,7 +1055,7 @@ const RANDOM_EVENTS = [
   // ----- 룸메이트 사건 -----
   {
     id: 'rm_yejun', title: '📚 예준이의 연등 제안', text: '예준이가 문제집을 흔들며 말했다. "오늘 같이 연등하자. 이번 범위 같이 끝내!"',
-    when: s => s.roommate === 'yejun', weight: () => 1.4,
+    when: s => hasRoommate(s, 'yejun'), weight: () => 1.4, affTo: 'yejun',
     choices: [
       { label: '같이 한다', exp: { int: 8, stress: 4, aff: 8 },
         run: () => ({ text: '서로 문제를 내 주며 새벽 1시까지. 예준이 설명이 선생님보다 쉽다.', deltas: { int: 8, stress: 4, aff: 8 } }) },
@@ -1021,17 +1065,17 @@ const RANDOM_EVENTS = [
   },
   {
     id: 'rm_yejun_contra', title: '😠 예준이의 경고', text: '예준이가 사물함 쪽을 보며 말했다. "그거… 걸리면 나까지 혼나. 치우면 안 돼?"',
-    when: s => s.roommate === 'yejun' && s.contra.length > 0, weight: () => 2,
+    when: s => hasRoommate(s, 'yejun') && s.contra.length > 0, weight: () => 2, affTo: 'yejun',
     choices: [
       { label: '집에 돌려보낸다 (물건 하나 포기)', exp: { aff: 10 },
-        run: s => { const id = s.contra.pop(); const c = contraOf(id); return { text: `${c.emoji} ${c.name}을(를) 다음 귀가 때 집에 두고 오기로 했다. 예준이 표정이 풀렸다.`, deltas: { aff: 10, stress: 2 } }; } },
+        run: s => { const id = s.contra.pop(); delete s.contraLoc[id]; const c = contraOf(id); return { text: `${c.emoji} ${c.name}${josa(c.name, '을', '를')} 다음 귀가 때 집에 두고 오기로 했다. 예준이 표정이 풀렸다.`, deltas: { aff: 10, stress: 2 } }; } },
       { label: '"절대 안 걸려" 버틴다', exp: { aff: -10 },
         run: () => ({ text: '예준이가 한숨을 쉬고 이어폰을 꼈다. 방 공기가 무겁다.', deltas: { aff: -10, stress: 4 } }) },
     ],
   },
   {
     id: 'rm_yumin', title: '🍜 유민이의 라면 유혹', text: '밤 11시, 유민이가 사물함에서 컵라면 두 개를 꺼냈다. "하나는 네 거. 물은 내가 떠 올게."',
-    when: s => s.roommate === 'yumin', weight: () => 1.4,
+    when: s => hasRoommate(s, 'yumin'), weight: () => 1.4, affTo: 'yumin',
     choices: [
       { label: '같이 먹는다', note: '25% 확률로 순찰에 걸림 (전기포트가 있으면 10%)', exp: { stress: -10, aff: 8 },
         run: s => rollS(s, s.contra.includes('kettle') ? 0.9 : 0.75)
@@ -1043,7 +1087,7 @@ const RANDOM_EVENTS = [
   },
   {
     id: 'rm_daehyun', title: '🏃 대현이의 새벽 러닝', text: '새벽 6시, 대현이가 이불을 확 걷었다. "뛰러 가자! 논길 한 바퀴!"',
-    when: s => s.roommate === 'daehyun', weight: () => 1.4,
+    when: s => hasRoommate(s, 'daehyun'), weight: () => 1.4, affTo: 'daehyun',
     choices: [
       { label: '따라 나간다', exp: { hp: 8, stress: -4, aff: 8 },
         run: () => ({ text: '안개 낀 풍산 들판을 달렸다. 숨이 차지만 머리가 맑아졌다.', deltas: { hp: 8, stress: -4, aff: 8 } }) },
@@ -1053,7 +1097,7 @@ const RANDOM_EVENTS = [
   },
   {
     id: 'rm_jaewon_bread', title: '🥐 책상 위의 빵', text: '아침에 일어나 보니 책상 위에 매점 빵 하나와 우유가 놓여 있다. 재원이는 벌써 나가고 없다.',
-    when: s => s.roommate === 'jaewon' && (s.stress >= 55 || s.stats.hp < 40), weight: () => 1.6,
+    when: s => hasRoommate(s, 'jaewon') && (s.stress >= 55 || s.stats.hp < 40), weight: () => 1.6, affTo: 'jaewon',
     choices: [
       { label: '고맙다고 메시지 보낸다', exp: { aff: 8, stress: -5 },
         run: () => ({ text: '"ㅇㅇ" 한 글자 답장. 그래도 왠지 든든하다.', deltas: { aff: 8, stress: -5, hp: 3 } }) },
@@ -1063,7 +1107,7 @@ const RANDOM_EVENTS = [
   },
   {
     id: 'rm_jaewon_rollcall', title: '🎧 이어폰 너머', text: '점호 직전, 재원이가 이어폰 한쪽을 빼며 말했다. "너 내일 수행평가 자료, 프린트 안 했지? 내가 두 장 뽑아 놨어."',
-    when: s => s.roommate === 'jaewon' && s.aff >= 45, weight: () => 1.2,
+    when: s => hasRoommate(s, 'jaewon') && affOf(s, 'jaewon') >= 45, weight: () => 1.2, affTo: 'jaewon',
     choices: [
       { label: '받는다', exp: { int: 4, aff: 5 },
         run: () => ({ text: '"고마워." 재원이는 대답 대신 다시 이어폰을 꼈다.', deltas: { int: 4, aff: 5, stress: -3 } }) },
@@ -1106,14 +1150,16 @@ const RANDOM_EVENTS = [
   {
     id: 'contra_check', title: '🔦 금지물품 일제 점검', text: '"오늘 밤 전 호실 금지물품 점검이 있습니다." 방송이 울렸다. 사물함 속 물건이 떠오른다.',
     when: s => s.contra.length > 0, weight: s => 0.8 + s.contra.length * 0.4,
+    // 자진 제출 = 친구 옷장 것도 내 것이라고 밝힌다
     choices: [
-      { label: '천장 타일 위에 숨긴다', note: '물건이 많을수록 걸리기 쉽다', exp: { stress: 4 },
+      { label: '옷장 안쪽 깊숙이 더 숨긴다', note: '물건이 많을수록 걸리기 쉽다 · 친구 옷장에서 나오면…', exp: { stress: 4 },
         run: s => {
-          if (rollS(s, clamp(0.75 - s.contra.length * 0.1, 0.3, 0.75))) return { text: '사감 선생님 손전등이 천장 바로 아래를 지나갔다. 무사 통과. 심장이 아직도 뛴다.', deltas: { stress: 4 } };
-          const lost = s.contra.splice(0); return { text: `천장 타일이 덜컹. ${lost.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ')} 전부 압수됐다.`, deltas: { penalty: 3 + lost.length * 2, stress: 8 } };
+          if (rollS(s, clamp(0.75 - s.contra.length * 0.1, 0.3, 0.75))) return { text: '사감 선생님 손전등이 옷장 바로 앞을 지나갔다. 무사 통과. 심장이 아직도 뛴다.', deltas: { stress: 4 } };
+          const res = s.contra.slice().map(id => confiscate(s, id));
+          return { text: '옷장 문이 열렸다…<br>' + res.map(r => '· ' + r.text).join('<br>'), deltas: mergeDeltas(res.map(r => r.deltas).concat([{ stress: 4 }])) };
         } },
       { label: '자진 제출한다', exp: { penalty: 2 },
-        run: s => { const lost = s.contra.splice(0); return { text: `${lost.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ')}을(를) 내놨다. "솔직해서 이번만 봐준다." 벌점은 조금만.`, deltas: { penalty: 2, stress: -2 } }; } },
+        run: s => { const lost = s.contra.splice(0); s.contraLoc = {}; return { text: `친구 옷장에 숨긴 것까지 전부 "제 거예요" 하고 내놨다. ${lost.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ')}. "솔직해서 이번만 봐준다." 벌점은 조금만.`, deltas: { penalty: 2, stress: -2 } }; } },
     ],
   },
   // ----- 계절·날씨 사건 -----
@@ -1552,7 +1598,9 @@ function chooseRandom(s, choiceIndex) {
   if (res.money) s.money += res.money;
   if (ev.id === 'sns') s.rumorPending = false;
   s.lastRandom = ev.id;
+  s._affTo = ev.affTo || null;   // 특정 룸메 사건이면 그 룸메 친밀도만
   const real = applyChanges(s, res.deltas);
+  delete s._affTo;
   s.result = { kind: 'random', title: ev.title, text: res.text, changes: real, choice: choice.label, cost: choice.cost || 0, money: res.money || 0, bad: isBad(real) };
   addLog(s, ev.title.split(' ')[0], `${ev.title.slice(ev.title.indexOf(' ') + 1)}: '${choice.label}' → ${changesToText(real) || '변화 없음'}`);
   s.pendingRandom = null;
@@ -1935,19 +1983,18 @@ function endTurn(s) {
   decay.stress = changeStat(s, 'stress', CONFIG.STRESS_PER_TURN + (gradeOf(s.turn) === 3 ? 3 : 0) + roomFx + contraStress);
 
   // 룸메 반응
-  let roomAff = 0;
-  if (s.roommate === 'yejun' && s.contra.length) roomAff -= 3;
-  if (s.roommate === 'yumin' && has('kettle')) roomAff += 3;
-  if (roomAff) changeStat(s, 'aff', roomAff);
+  const roomAff = [];
+  if (hasRoommate(s, 'yejun') && s.contra.length) { setAff(s, 'yejun', affOf(s, 'yejun') - 3); roomAff.push({ id: 'yejun', d: -3 }); }
+  if (hasRoommate(s, 'yumin') && has('kettle')) { setAff(s, 'yumin', affOf(s, 'yumin') + 3); roomAff.push({ id: 'yumin', d: 3 }); }
 
   // 불시 방 검사: 물건마다 따로 걸릴 수 있다 (재원이는 사감 선생님 발소리를 먼저 듣는다)
-  const inspectP = CONFIG.CONTRA_INSPECT - (s.roommate === 'jaewon' && s.aff >= 50 ? 0.05 : 0);
-  const caught = s.contra.filter(() => roll(inspectP));
+  const inspectP = CONFIG.CONTRA_INSPECT - (hasRoommate(s, 'jaewon') && affOf(s, 'jaewon') >= 50 ? 0.05 : 0);
+  const caughtIds = s.contra.filter(() => roll(inspectP));
+  const caught = caughtIds.map(id => confiscate(s, id));
   if (caught.length) {
-    s.contra = s.contra.filter(id => !caught.includes(id));
-    changeStat(s, 'penalty', CONFIG.CONTRA_PENALTY * caught.length);
-    changeStat(s, 'stress', 5);
-    addLog(s, '🔦', `불시 방 검사: ${caught.map(id => contraOf(id).name).join(', ')} 압수, 벌점 +${CONFIG.CONTRA_PENALTY * caught.length}`);
+    const real = applyChanges(s, mergeDeltas(caught.map(r => r.deltas)));
+    caught.forEach(r => addLog(s, '🔦', '불시 방 검사: ' + r.text));
+    caught.changes = real;
   }
   const warnedBefore = s.penaltyWarned;
 
@@ -1975,7 +2022,7 @@ function endTurn(s) {
   total.stress = s.stress - s.turnStartStress;
   total.penalty = s.penalty - s.turnStartPenalty;
   s.summary = { turn: s.turn, decay: decay, total: total, warnings: warnings, burnout: burnout, moneyNow: s.money, roomFx: roomFx,
-    contraFx: contraReal, contraStress: contraStress, roomAff: roomAff, caught: caught };
+    contraFx: contraReal, contraStress: contraStress, roomAff: roomAff, caught: caught.map(r => r.text), caughtChanges: caught.changes || null };
   if (checkPenalty(s)) return;
   if (!warnedBefore && s.penaltyWarned) s.summary.warnText = `📞 벌점 ${s.penalty}점! 부모님이 학교에 호출됐다. ${CONFIG.PENALTY_OUT}점이 되면 퇴사다.`;
 
@@ -2060,7 +2107,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     CONFIG, STATS, STAT_NAME, ROULETTE, ITEMS, SPECIAL_EVENTS, VACATION_OPTIONS, RANDOM_EVENTS,
     formatWon, newGame, startTurn, spinRoulette, chooseHome, BIWEEKLY_OPTIONS, goShop, buyItem, cannotBuyReason, leaveShop,
-    getCalendarEvent, chooseCalendar, afterCalendarResult, examsForTurn, currentExam, packItem, leavePack, CONTRABAND,
+    getCalendarEvent, chooseCalendar, afterCalendarResult, examsForTurn, currentExam, packItem, leavePack, CONTRABAND, confiscate,
     QUIZ, QUIZ_BANK, makeQuiz, startQuiz, finishQuiz, canQuiz, ACHIEVEMENTS, earnedAchievements, ROOMMATES,
     getSpecialOptions, doSpecial, afterEventResult, getPendingRandom, canChoose, chooseRandom,
     afterRandomResult, takeExam, afterExamResult, nextTurn, takeFinalExam,
@@ -2077,13 +2124,13 @@ if (typeof module !== 'undefined') {
 //  - 흐름: 버튼 클릭 → handleAction() → 규칙 함수 호출 → render()
 // =====================================================================
 
-const SAVE_KEY = 'pungsan-graduation-save-v5';
+const SAVE_KEY = 'pungsan-graduation-save-v6';
 const ACHV_KEY = 'pungsan-achievements-v1';
 
 // ---------- 자동 업데이트 ----------
 // 새 버전을 올릴 때: 아래 APP_VERSION 과 version.json 의 "version" 을 같은 값으로 바꾼다.
 // 그러면 접속 중인 사람은 1분 안에 알림을 받고, 지금 판이 끝나면 새 버전으로 바뀐다.
-const APP_VERSION = '2026.11.24-8';
+const APP_VERSION = '2026.11.24-9';
 const VERSION_CHECK_MS = 60 * 1000;
 let remoteVersion = null;     // 서버에 올라온 최신 버전
 let newVersionReady = false;  // 새 버전이 기다리는 중인지
@@ -2150,7 +2197,7 @@ function loadGame() {
     const text = localStorage.getItem(SAVE_KEY);
     if (!text) return null;
     const data = JSON.parse(text);
-    return data && data.version === 5 ? data : null;
+    return data && data.version === 6 ? data : null;
   } catch (e) { return null; }
 }
 
@@ -2270,7 +2317,7 @@ function playerHTML() {
         <div class="stats">${statsHTML}</div>
         <div class="gauges">${gauges}</div>
         ${roommateHTML()}
-        ${s.contra.length ? `<div class="inv">${s.contra.map(id => `<span class="pill red" title="${esc(contraOf(id).desc)}">🤫 ${contraOf(id).emoji} ${contraOf(id).name}</span>`).join('')}</div>` : ''}
+        ${s.contra.length ? `<div class="inv">${s.contra.map(id => `<span class="pill red" title="${esc(contraOf(id).desc)}">🤫 ${contraOf(id).emoji} ${contraOf(id).name} · ${closetName(s, s.contraLoc[id] || 'me')}</span>`).join('')}</div>` : ''}
         ${Object.keys(s.inv || {}).some(k => s.inv[k] > 0) ? `<div class="inv">${Object.keys(s.inv).filter(k => s.inv[k] > 0).map(k => `<span class="pill yellow">${INV_NAME[k]} ×${s.inv[k]}</span>`).join('')}</div>` : ''}
         <div class="timeline">${dots}</div>
         <div class="legend">📋 내신 · 📝 모의고사 · 🏖 방학 · 🎓 수능 · 빨간 선 = 위험선</div>
@@ -2279,13 +2326,14 @@ function playerHTML() {
 }
 
 function roommateHTML() {
-  const rm = roommateOf(s);
-  const mood = s.aff >= 70 ? '🤝 든든함 (매 턴 스트레스 -3)' : (s.aff <= 25 ? '🥶 냉전 중 (매 턴 스트레스 +4)' : '🙂 평범');
+  const mood = s.aff >= 70 ? '🤝 방 분위기 최고 (매 턴 스트레스 -3)' : (s.aff <= 25 ? '🥶 방 분위기 냉랭 (매 턴 스트레스 +4)' : '🙂 방 분위기 무난');
   return `
     <div class="roommate">
-      <b>🛏️ 룸메 ${rm.name}</b> · ${rm.emoji} ${rm.type}<br>
-      친밀도 <b>${s.aff}</b>/100 · ${mood}
-      <div class="bar"><i style="width:${s.aff}%;background:#845EF7"></i></div>
+      <b>🛏️ 3인실 룸메이트</b> · ${mood}
+      ${roommatesOf(s).map(r => `
+        <div style="margin-top:8px">${r.emoji} <b>${r.name}</b> · ${r.type} · 친밀도 <b>${affOf(s, r.id)}</b>
+          <div class="bar"><i style="width:${affOf(s, r.id)}%;background:${affOf(s, r.id) <= 25 ? 'var(--red)' : '#845EF7'}"></i></div>
+        </div>`).join('')}
     </div>`;
 }
 
@@ -2363,7 +2411,8 @@ function welcomeHTML() {
       <p class="result-text"><b>${esc(s.name)}</b> 학생의 풍산고등학교 입학을 진심으로 축하합니다.<br>
       논밭 사이로 버스가 하루 몇 대 안 다니는 풍산읍, 오늘부터 3년간 기숙사 생활 시작.<br>${STAT_EMOJI[s.focus]} <b>${STAT_NAME[s.focus]}</b>에 자신 있는 신입생이라는 소문이 벌써 돌고 있다.</p>
       <div class="info" style="text-align:left">
-        🛏️ <b>룸메이트: ${roommateOf(s).name}</b> (${roommateOf(s).emoji} ${roommateOf(s).type})<br>${roommateOf(s).desc}<br>
+        🛏️ <b>3인실 룸메이트</b><br>
+        ${roommatesOf(s).map(r => `${r.emoji} <b>${r.name}</b> (${r.type}): ${r.desc}`).join('<br>')}<br>
         친밀도가 높으면 든든한 지원군, 낮으면 방이 지옥이 된다.
       </div>
       <div class="info" style="text-align:left">
@@ -2373,7 +2422,7 @@ function welcomeHTML() {
         · 🚨 <b>벌점</b>: 무단외출·야식·폰·점호 지각… ${CONFIG.PENALTY_WARN}점이면 부모님 호출, ${CONFIG.PENALTY_OUT}점이면 강제 퇴사<br>
         · 📅 매 턴 실제 풍산고 학사일정 이벤트가 열린다 (전통문화체험, 문경새재, 학생회장 선거, 봉황축제…)<br>
         · 🏠 한 달마다 귀가는 필수, 사이사이 격주 주말엔 귀가할지 잔류할지 고른다<br>
-        · 🎒 복귀할 때 전기포트·전기매트 같은 반입 금지물품을 몰래 챙길 수 있다. 걸리면 압수 + 벌점<br>
+        · 🎒 복귀할 때 전기포트·전기매트 같은 반입 금지물품을 몰래 챙겨 내 옷장이나 룸메 옷장에 숨긴다. 내 옷장에서 걸리면 벌점, 룸메 옷장에서 걸리면… 우정이 끝난다<br>
         · 📝 모의고사(9등급)와 📋 중간·기말(내신 5등급)이 실제 일정대로. 시험마다 전교 1등 라이벌 <b>${RIVAL_NAME}</b>과 등급 대결<br>
         · 3학년 마지막엔 수능. 모든 능력치 ${CONFIG.DANGER_LINE} 이상이어야 졸업
       </div>
@@ -2435,22 +2484,38 @@ function itemPillsHTML(it) {
   }).join('');
 }
 
+let packPick = null;   // 짐 싸기에서 고른 금지물품 (숨길 곳 고르기 전)
+
 function packHTML() {
   const r = s.packResult;
   const cards = CONTRABAND.map(c => {
     const own = s.contra.includes(c.id);
-    return `<button class="choice risky" data-action="pack" data-id="${c.id}" ${own || r ? 'disabled' : ''}>
-      <span class="emo">${c.emoji}</span><span class="name">${c.name}</span>
+    const picked = packPick === c.id;
+    return `<button class="choice risky" data-action="packPick" data-id="${c.id}" ${own || r ? 'disabled' : ''} ${picked ? 'style="border-color:var(--green);box-shadow:0 4px 0 var(--green)"' : ''}>
+      <span class="emo">${c.emoji}</span><span class="name">${c.name}${picked ? ' ✔' : ''}</span>
       <span class="desc">${c.desc}</span>
-      <span class="pills">${own ? '<span class="pill green">이미 보관 중</span>' : `<span class="pill red">🚨 짐 검사 ${pct(CONFIG.CONTRA_ENTRY_CATCH)}</span>`}</span>
+      <span class="pills">${own ? `<span class="pill green">보관 중 · ${closetName(s, s.contraLoc[c.id] || 'me')}</span>` : `<span class="pill red">🚨 짐 검사 ${pct(CONFIG.CONTRA_ENTRY_CATCH)}</span>`}</span>
     </button>`;
   }).join('');
+  let closets = '';
+  if (packPick && !r) {
+    const c = contraOf(packPick);
+    closets = `
+      <div class="quiz-cta" style="display:block;margin:0 0 14px">
+        <b>🤫 ${c.emoji} ${c.name}, 어디에 숨길까?</b>
+        <div class="choices" style="margin-top:10px">
+          <button class="choice" data-action="packTo" data-id="me"><span class="emo">🧥</span><span class="name">내 옷장</span><span class="hint">걸리면 내가 벌점 +${CONFIG.CONTRA_PENALTY}</span></button>
+          ${roommatesOf(s).map(rm => `<button class="choice risky" data-action="packTo" data-id="${rm.id}"><span class="emo">${rm.emoji}</span><span class="name">${rm.name}의 옷장</span><span class="hint">걸려도 벌점은 ${rm.short}이가 받는다</span><span class="note">💀 대신 들통나면 사회성 -15, ${rm.short}이 친밀도 0</span></button>`).join('')}
+        </div>
+      </div>`;
+  }
   return `
     <div class="card stage fade-in">
       ${stepsHTML()}
       <h2>🎒 기숙사 복귀 전, 짐 싸기</h2>
-      <p class="lead">집에 있는 반입 금지물품을 하나 몰래 챙겨 갈 수 있다. 갖고 있으면 매 턴 효과가 있지만, 복귀할 때 짐 검사(${pct(CONFIG.CONTRA_ENTRY_CATCH)})나 불시 방 검사(물건마다 매 턴 ${pct(CONFIG.CONTRA_INSPECT)})에 걸리면 압수에 벌점 +${CONFIG.CONTRA_PENALTY}.</p>
+      <p class="lead">집에 있는 반입 금지물품을 하나 몰래 챙겨 갈 수 있다. 갖고 있으면 매 턴 효과가 있지만, 복귀할 때 짐 검사(${pct(CONFIG.CONTRA_ENTRY_CATCH)})나 불시 방 검사(물건마다 매 턴 ${pct(CONFIG.CONTRA_INSPECT)})에 걸리면 압수. 숨길 옷장은 직접 고른다.</p>
       ${r ? `<div class="result-box ${r.ok ? 'good' : 'bad'}" style="margin-bottom:12px"><div class="result-emoji">${r.ok ? '🤫' : '🚫'}</div><p class="result-text">${r.text}</p>${r.ok ? '' : `<div class="chips">${chipsHTML(r.changes)}</div>`}</div>` : ''}
+      ${closets}
       <div class="choices">${cards}</div>
       <div class="btn-row"><button class="btn yellow" data-action="leavePack">${r ? '매점으로 →' : '그냥 간다 (매점으로) →'}</button></div>
     </div>`;
@@ -2734,14 +2799,14 @@ function summaryHTML() {
   if (s.penalty || sum.total.penalty) rows += `<tr><td>🚨 벌점</td><td class="${sum.total.penalty > 0 ? 'minus' : (sum.total.penalty < 0 ? 'plus' : '')}">${sign(sum.total.penalty)}</td><td>-</td><td><b>${s.penalty}</b></td></tr>`;
   let alerts = '';
   if (sum.warnText) alerts += `<div class="alert">${sum.warnText}</div>`;
-  if (sum.caught && sum.caught.length) alerts += `<div class="alert">🔦 불시 방 검사! ${sum.caught.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ')} 압수, 벌점 +${CONFIG.CONTRA_PENALTY * sum.caught.length}</div>`;
-  if (s.contra.length || (sum.contraFx && Object.keys(sum.contraFx).length) || sum.contraStress) alerts += `<div class="info">🎒 몰래 보관 중: ${s.contra.length ? s.contra.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ') : '없음'}${sum.contraStress ? ` · 스트레스 ${sum.contraStress}` : ''}${sum.contraFx && sum.contraFx.hp ? ` · 체력 +${sum.contraFx.hp}` : ''} (자연 감소 줄어든 효과 포함)</div>`;
-  if (sum.roomAff) alerts += `<div class="${sum.roomAff > 0 ? 'info' : 'alert'}">🛏️ ${roommateOf(s).short}이가 ${sum.roomAff > 0 ? '전기포트 라면에 감동했다' : '방에 있는 금지물품 때문에 불안해한다'} (친밀도 ${sign(sum.roomAff)})</div>`;
-  if (sum.roomFx < 0) alerts += `<div class="info">🤝 룸메 ${roommateOf(s).name}과 사이가 좋아서 스트레스가 덜 쌓였다 (${sum.roomFx})</div>`;
-  if (sum.roomFx > 0) alerts += `<div class="alert">🥶 룸메 ${roommateOf(s).name}과 냉전 중이라 방에 있는 게 괴롭다 (스트레스 +${sum.roomFx})</div>`;
+  if (sum.caught && sum.caught.length) alerts += `<div class="alert">🔦 불시 방 검사!<br>${sum.caught.map(t => '· ' + t).join('<br>')}${sum.caughtChanges ? `<div class="chips" style="margin-top:6px">${chipsHTML(sum.caughtChanges)}</div>` : ''}</div>`;
+  if (s.contra.length || (sum.contraFx && Object.keys(sum.contraFx).length) || sum.contraStress) alerts += `<div class="info">🎒 몰래 보관 중: ${s.contra.length ? s.contra.map(id => `${contraOf(id).emoji} ${contraOf(id).name}(${closetName(s, s.contraLoc[id] || 'me')})`).join(', ') : '없음'}${sum.contraStress ? ` · 스트레스 ${sum.contraStress}` : ''}${sum.contraFx && sum.contraFx.hp ? ` · 체력 +${sum.contraFx.hp}` : ''} (자연 감소 줄어든 효과 포함)</div>`;
+  for (const ra of (sum.roomAff || [])) alerts += `<div class="${ra.d > 0 ? 'info' : 'alert'}">🛏️ ${roommateById(ra.id).short}이가 ${ra.d > 0 ? '전기포트 라면에 감동했다' : '방에 있는 금지물품 때문에 불안해한다'} (${roommateById(ra.id).short}이 친밀도 ${sign(ra.d)})</div>`;
+  if (sum.roomFx < 0) alerts += `<div class="info">🤝 룸메들과 사이가 좋아서 스트레스가 덜 쌓였다 (${sum.roomFx})</div>`;
+  if (sum.roomFx > 0) alerts += `<div class="alert">🥶 방 분위기가 냉랭해서 방에 있는 게 괴롭다 (스트레스 +${sum.roomFx})</div>`;
   if (sum.burnout) alerts += `<div class="alert">🔥 번아웃! 쌓인 스트레스가 터졌다. 며칠을 침대에서 못 일어났다. (${changesToText(sum.burnout)}, 스트레스 55로)</div>`;
   for (const k of sum.warnings) {
-    alerts += `<div class="alert">⚠️ ${STAT_NAME[k]}이(가) ${CONFIG.DANGER_LINE} 미만! 다음 턴이 끝날 때까지 ${CONFIG.DANGER_LINE} 이상으로 올리지 못하면 전학이다.</div>`;
+    alerts += `<div class="alert">⚠️ ${STAT_NAME[k]}${josa(STAT_NAME[k], "이", "가")} ${CONFIG.DANGER_LINE} 미만! 다음 턴이 끝날 때까지 ${CONFIG.DANGER_LINE} 이상으로 올리지 못하면 전학이다.</div>`;
   }
   const last = s.turn >= CONFIG.TOTAL_TURNS;
   let preview = '';
@@ -2807,10 +2872,9 @@ function examListHTML() {
 }
 
 function achvEndHTML() {
-  const rm = roommateOf(s);
   const fresh = (s.newAchv || []).map(id => ACHIEVEMENTS.find(a => a.id === id)).filter(Boolean);
   return `
-    <div class="info" style="margin-top:14px">🛏️ 룸메 ${rm.name}(${rm.type})과의 최종 친밀도 <b>${s.aff}</b>${s.track ? ` · ${TRACK_NAME[s.track]}` : ''}${s.tripCourse ? ` · 수학여행 ${s.tripCourse === 'japan' ? '🇯🇵 일본 학교 방문' : '🏝️ 관광 코스'}` : ''}</div>
+    <div class="info" style="margin-top:14px">🛏️ 최종 친밀도: ${roommatesOf(s).map(r => `${r.name} <b>${affOf(s, r.id)}</b>`).join(' · ')}${s.track ? ` · ${TRACK_NAME[s.track]}` : ''}${s.tripCourse ? ` · 수학여행 ${s.tripCourse === 'japan' ? '🇯🇵 일본 학교 방문' : '🏝️ 관광 코스'}` : ''}</div>
     ${fresh.length ? `<div class="quiz-cta" style="display:block"><b>🏆 새 업적 ${fresh.length}개 달성!</b><div class="chips" style="margin-top:8px">${fresh.map(a => `<span class="chip up">${a.emoji} ${a.name}</span>`).join('')}</div></div>` : ''}
     <details class="log" style="margin-top:12px"><summary>🏆 업적 도감 ${loadAchv().size}/${ACHIEVEMENTS.length}</summary>${achvGridHTML(s.newAchv)}</details>`;
 }
@@ -3003,8 +3067,9 @@ function handleAction(action, id) {
     case 'spin': spinWheel(); return;
     case 'toShop': goShop(s); break;
     case 'biweekly': chooseHome(s, id); break;
-    case 'pack': packItem(s, id); break;
-    case 'leavePack': leavePack(s); break;
+    case 'packPick': packPick = id; break;
+    case 'packTo': if (packPick) packItem(s, packPick, id); packPick = null; break;
+    case 'leavePack': leavePack(s); packPick = null; break;
     case 'buy': buyItem(s, id); break;
     case 'leaveShop': leaveShop(s); break;
     case 'special': doSpecial(s, id); break;
