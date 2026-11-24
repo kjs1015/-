@@ -11,14 +11,17 @@
     --ink: #1f2430;
     --muted: #6b7080;
     --line: #e3ded3;
+    --soft: #f7f5f0;
     --accent: #2f5d8a;
     --accent-ink: #ffffff;
     --danger: #c0392b;
-    --warn: #d68910;
+    --warn: #b9770e;
+    --good: #2e8b57;
     --c-지능: #3b6fb6;
     --c-체력: #2e8b57;
     --c-사회성: #c4703a;
     --c-명성: #9b59b6;
+    --c-경계: #c0392b;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -27,8 +30,12 @@
       --ink: #e8e9ec;
       --muted: #9aa0ad;
       --line: #333743;
+      --soft: #1b1e25;
       --accent: #5b8fc7;
       --accent-ink: #0d1117;
+      --danger: #e5675a;
+      --warn: #e0a83a;
+      --good: #4cbb7f;
     }
   }
   * { box-sizing: border-box; }
@@ -39,198 +46,319 @@
     font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
     line-height: 1.6;
   }
-  main {
-    max-width: 640px;
-    margin: 0 auto;
-    padding: 32px 16px 48px;
-  }
-  header h1 { margin: 0 0 4px; font-size: 1.8rem; }
-  header p { margin: 0 0 24px; color: var(--muted); }
+  main { max-width: 640px; margin: 0 auto; padding: 28px 16px 48px; }
+  header h1 { margin: 0 0 2px; font-size: 1.7rem; }
+  header p { margin: 0 0 20px; color: var(--muted); }
   .card {
     background: var(--card);
     border: 1px solid var(--line);
     border-radius: 14px;
-    padding: 20px;
-    margin-bottom: 16px;
+    padding: 18px 20px;
+    margin-bottom: 14px;
   }
-  .turn-row {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 12px;
-  }
-  .turn { font-size: 1.25rem; font-weight: 700; }
-  .exam-tag { font-size: .85rem; color: var(--muted); }
-  .stat { margin: 10px 0; }
-  .stat-label {
-    display: flex; justify-content: space-between;
-    font-size: .95rem; margin-bottom: 4px;
-  }
-  .stat-label .warn { color: var(--danger); font-weight: 700; }
-  .bar {
-    height: 12px; border-radius: 6px; background: var(--line); overflow: hidden;
-    position: relative;
-  }
-  .bar > span {
-    display: block; height: 100%; border-radius: 6px;
-    transition: width .35s ease;
-  }
-  .bar .danger-line {
-    position: absolute; top: 0; bottom: 0; left: 25%;
-    width: 2px; background: var(--danger); opacity: .5;
-  }
-  #log {
-    min-height: 140px;
-    white-space: pre-wrap;
-    font-size: .98rem;
-  }
-  #log p { margin: 0 0 6px; }
+  .turn-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 8px; }
+  .turn { font-size: 1.2rem; font-weight: 700; }
+  .tag { font-size: .85rem; color: var(--muted); }
+  .tag.exam { color: var(--accent); font-weight: 700; }
+  .progress { display: flex; gap: 3px; margin-bottom: 12px; }
+  .progress i { flex: 1; height: 5px; border-radius: 3px; background: var(--line); }
+  .progress i.done { background: var(--accent); }
+  .progress i.exam { outline: 1px solid var(--accent); outline-offset: 1px; }
+  .stat { margin: 8px 0; }
+  .stat-label { display: flex; justify-content: space-between; font-size: .95rem; margin-bottom: 3px; }
+  .stat-label .val { font-variant-numeric: tabular-nums; transition: color .3s; }
+  .stat-label .val.warn { color: var(--danger); font-weight: 700; }
+  .stat.up .val { color: var(--good); font-weight: 700; }
+  .stat.down .val { color: var(--danger); font-weight: 700; }
+  .bar { height: 11px; border-radius: 6px; background: var(--line); overflow: hidden; position: relative; }
+  .bar > span { display: block; height: 100%; border-radius: 6px; transition: width .4s ease; }
+  .bar .danger-line { position: absolute; top: 0; bottom: 0; left: 25%; width: 2px; background: var(--danger); opacity: .55; }
+  .sus { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+  #log { min-height: 130px; font-size: .98rem; }
+  #log p { margin: 0 0 6px; white-space: pre-wrap; }
   #log .warn { color: var(--warn); font-weight: 600; }
   #log .bad { color: var(--danger); font-weight: 700; }
+  #log .good { color: var(--good); font-weight: 700; }
   #log .big { font-size: 1.15rem; font-weight: 700; }
-  #buttons {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 10px;
-  }
+  #log .huge { font-size: 1.6rem; font-weight: 800; text-align: center; margin: 6px 0 10px; }
+  #log .fx { color: var(--muted); font-size: .9rem; }
+  #log .event { background: var(--soft); border-left: 4px solid var(--accent); padding: 10px 12px; border-radius: 8px; }
+  .timer { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 8px 0 4px; }
+  .timer > span { display: block; height: 100%; background: var(--warn); width: 100%; }
+  #buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
   button {
-    font: inherit;
-    padding: 12px 10px;
-    border-radius: 10px;
-    border: 1px solid var(--line);
-    background: var(--card);
-    color: var(--ink);
-    cursor: pointer;
-    transition: transform .08s, border-color .15s;
+    font: inherit; padding: 11px 10px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    cursor: pointer; transition: transform .08s, border-color .15s;
   }
   button:hover { border-color: var(--accent); }
   button:active { transform: scale(.97); }
   button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
-  button small { display: block; color: var(--muted); font-size: .78rem; }
-  button.primary small { color: inherit; opacity: .8; }
-  #status[hidden] { display: none; }
-  footer { text-align: center; color: var(--muted); font-size: .85rem; margin-top: 24px; }
+  button.risky { border-color: var(--danger); }
+  button small { display: block; color: var(--muted); font-size: .78rem; line-height: 1.35; }
+  button.primary small { color: inherit; opacity: .85; }
+  #status[hidden], #dex[hidden] { display: none; }
+  #dex h2 { font-size: 1rem; margin: 0 0 10px; }
+  .dex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+  .dex-item { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: .85rem; background: var(--soft); }
+  .dex-item b { display: block; font-size: .92rem; }
+  .dex-item.locked { color: var(--muted); }
+  .shake { animation: shake .4s; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+  footer { text-align: center; color: var(--muted); font-size: .82rem; margin-top: 22px; }
 </style>
 </head>
 <body>
 <main>
   <header>
     <h1>🏫 풍산고에서 졸업하기</h1>
-    <p>15턴을 버티고 무사히 졸업하자!</p>
+    <p>3년, 15턴. 살아남아서 전설이 되자.</p>
   </header>
 
   <section class="card" id="status" hidden>
     <div class="turn-row">
-      <span class="turn" id="turn">1/15턴</span>
-      <span class="exam-tag" id="examTag"></span>
+      <span class="turn" id="turn"></span>
+      <span class="tag" id="tag"></span>
     </div>
+    <div class="progress" id="progress"></div>
     <div id="bars"></div>
+    <div class="sus stat" id="susRow">
+      <div class="stat-label"><span>👀 사감 경계도</span><span class="val" id="susVal"></span></div>
+      <div class="bar"><span id="susFill" style="background:var(--c-경계)"></span></div>
+    </div>
   </section>
 
-  <section class="card">
+  <section class="card" id="logCard">
     <div id="log"></div>
   </section>
 
   <section id="buttons"></section>
 
-  <footer>시험 턴: 3 · 6 · 9 · 12 · 15 &nbsp;|&nbsp; 매 턴 모든 능력치 -3</footer>
+  <section class="card" id="dex" hidden style="margin-top:14px">
+    <h2 id="dexTitle"></h2>
+    <div class="dex-grid" id="dexGrid"></div>
+  </section>
+
+  <footer>매 턴 모든 능력치 -3 · 지능·체력·사회성 25 미만 2턴 연속이면 전학</footer>
 </main>
 
 <script>
-// ----- 1. 게임 설정 -----
+// ===== 1. 게임 설정 =====
 const STATS = ["지능", "체력", "사회성", "명성"];
-const DECAY = 3;                 // 매 턴이 끝나면 모든 능력치가 3씩 줄어든다
-const DANGER = 25;               // 지능·체력·사회성이 25 미만으로 2턴 연속이면 전학
-const LAST_TURN = 15;            // 15턴을 마치면 졸업
+const DECAY = 3;
+const DANGER = 25;
+const LAST_TURN = 15;
 const EXAM_TURNS = [3, 6, 9, 12, 15];
+const MONTHS = ["3월", "5월", "7월", "9월", "12월"];
+const EVENT_CHANCE = 45;          // 턴 시작 시 랜덤 이벤트 확률(%)
+const OUTING_BASE_RISK = 15;      // 무단외출 기본 적발 확률(%)
+const OUTING_SUS = 15;            // 무단외출 성공 시 경계도 증가
+const SUS_DECAY = 5;              // 매 턴 경계도 감소
+const QUIZ_COUNT = 3;
+const QUIZ_SECONDS = 6;
+const QUIZ_BONUS = 5;             // 문제당 시험 점수 보너스
+
 const ACTIVITIES = {
-  "자습":     { "지능": 10, "체력": -3 },
-  "체단실":   { "체력": 10, "지능": -2 },
-  "장기자랑": { "사회성": 8, "명성": 8 },
-  "무단외출": { "사회성": 15, "명성": 15 },
+  "자습":     { fx: { "지능": 10, "체력": -3 }, hint: "지능+10 체력-3" },
+  "체단실":   { fx: { "체력": 10, "지능": -2 }, hint: "체력+10 지능-2" },
+  "장기자랑": { fx: { "사회성": 8, "명성": 8 }, hint: "사회성+8 명성+8" },
+  "동아리":   { fx: { "사회성": 5, "지능": 4, "명성": 2 }, hint: "사회성+5 지능+4 명성+2" },
+  "봉사활동": { fx: { "명성": 4, "체력": 2 }, sus: -15, hint: "명성+4 체력+2 경계도-15" },
+  "무단외출": { fx: { "사회성": 15, "명성": 15 }, hint: "사회성+15 명성+15" },
 };
-const ACTIVITY_HINT = {
-  "자습": "지능+10 체력-3",
-  "체단실": "체력+10 지능-2",
-  "장기자랑": "사회성+8 명성+8",
-  "무단외출": "사회성·명성+15 (15% 퇴학)",
-};
-const OUTING_SUCCESS = 85;       // 무단외출 성공 확률(%)
 
+// ===== 랜덤 이벤트 =====
+// run(g) → { fx, sus, msg }
+const EVENTS = [
+  { text: "🍞 매점에 한정판 빵이 나왔다!", choices: [
+    { label: "달려간다", run: () => ({ fx: { "체력": 4, "사회성": 4 }, msg: "줄 서다가 옆 반 친구랑 친해졌다." }) },
+    { label: "참고 공부한다", run: () => ({ fx: { "지능": 4 }, msg: "배는 고프지만 문제집이 술술 풀린다." }) },
+  ]},
+  { text: "🌙 친구들이 몰래 야식 파티를 연다고 한다.", choices: [
+    { label: "참여한다", run: () => ({ fx: { "사회성": 10 }, sus: 10, msg: "치킨은 맛있었지만… 사감 선생님 발소리가 들린 것 같다." }) },
+    { label: "자러 간다", run: () => ({ fx: { "체력": 5 }, msg: "푹 자고 개운하게 일어났다." }) },
+  ]},
+  { text: "🤧 환절기 감기에 걸렸다…", choices: [
+    { label: "보건실로…", run: () => ({ fx: { "체력": -8 }, msg: "며칠을 골골댔다." }) },
+  ]},
+  { text: "📝 교내 백일장 공고가 붙었다.", choices: [
+    { label: "참가한다", run: g => g.능력치["지능"] >= 60
+        ? { fx: { "명성": 10, "지능": 3 }, msg: "🏆 최우수상! 교내 방송에 이름이 나왔다." }
+        : { fx: { "지능": 2 }, msg: "아쉽게 입상은 못 했지만 좋은 경험이었다." } },
+    { label: "패스", run: () => ({ fx: {}, msg: "글쓰기는 다음 기회에." }) },
+  ]},
+  { text: "🏃 체육대회 계주 대표로 뽑혔다!", choices: [
+    { label: "전력 질주!", run: g => g.능력치["체력"] >= 60
+        ? { fx: { "명성": 12, "사회성": 4 }, msg: "🥇 역전 1등! 반 친구들이 헹가래를 쳐줬다." }
+        : { fx: { "명성": -4, "체력": -3 }, msg: "😵 코너에서 넘어졌다… 다음엔 체단실을 다니자." } },
+    { label: "다른 친구에게 양보", run: () => ({ fx: { "사회성": 3 }, msg: "응원단장으로 목이 쉬도록 응원했다." }) },
+  ]},
+  { text: "💌 사물함에 익명의 편지가 들어 있다…", choices: [
+    { label: "답장한다", run: () => ({ fx: { "사회성": 8, "지능": -3 }, msg: "두근두근. 공부에 집중이 잘 안 된다." }) },
+    { label: "모른 척한다", run: () => ({ fx: { "지능": 2 }, msg: "편지는 고이 서랍에 넣어 두었다." }) },
+  ]},
+  { text: "📱 몰래 쓰던 휴대폰을 압수당했다!", choices: [
+    { label: "반성문을 쓴다", run: () => ({ fx: { "사회성": -5 }, sus: 5, msg: "단톡방 소식을 하나도 모르게 됐다." }) },
+  ]},
+  { text: "🧹 선생님이 심부름을 부탁하셨다.", choices: [
+    { label: "기꺼이!", run: () => ({ fx: { "명성": 5 }, sus: -10, msg: "\"역시 믿음직하구나.\" 선생님 눈빛이 부드러워졌다." }) },
+    { label: "못 들은 척", run: () => ({ fx: { "체력": 2 }, msg: "조용히 복도를 빠져나왔다." }) },
+  ]},
+  { text: "🎸 축제 무대에 설 사람을 찾고 있다!", choices: [
+    { label: "무대에 선다", run: g => g.능력치["사회성"] >= 55
+        ? { fx: { "명성": 14 }, msg: "🎤 떼창이 터졌다! 하루아침에 학교 스타가 됐다." }
+        : { fx: { "명성": 3, "사회성": 3 }, msg: "가사를 까먹었지만 다들 박수는 쳐줬다." } },
+    { label: "관객석에서 즐긴다", run: () => ({ fx: { "사회성": 4 }, msg: "친구들과 신나게 뛰어놀았다." }) },
+  ]},
+  { text: "📚 선배가 과목별 족보를 물려주겠다고 한다.", choices: [
+    { label: "감사히 받는다", run: () => ({ fx: { "지능": 6, "사회성": 2 }, msg: "선배의 필기가 보물 같다." }) },
+  ]},
+  { text: "☕ 밤샘 공부의 유혹이 찾아왔다.", choices: [
+    { label: "밤을 새운다", run: () => ({ fx: { "지능": 8, "체력": -8 }, msg: "해 뜨는 걸 봤다. 머리는 꽉 찼는데 몸이 무겁다." }) },
+    { label: "푹 잔다", run: () => ({ fx: { "체력": 5 }, msg: "잠이 보약이다." }) },
+  ]},
+  { text: "🕵️ 사감 선생님이 기숙사 순찰을 강화했다!", choices: [
+    { label: "조심하자…", run: () => ({ fx: {}, sus: 15, msg: "당분간 무단외출은 위험하겠다." }) },
+  ]},
+  { text: "🍜 룸메이트가 컵라면을 나눠줬다.", choices: [
+    { label: "후루룩", run: () => ({ fx: { "체력": 3, "사회성": 3 }, msg: "세상에서 제일 맛있는 라면이었다." }) },
+  ]},
+  { text: "🧪 과학 경시대회에 나가 보라는 권유를 받았다.", choices: [
+    { label: "도전한다", run: g => Math.random() * 100 < g.능력치["지능"]
+        ? { fx: { "명성": 10, "지능": 4 }, msg: "🥈 은상 수상! 생기부가 빛난다." }
+        : { fx: { "체력": -4 }, msg: "준비하느라 지쳤는데 결과는 꽝…" } },
+    { label: "사양한다", run: () => ({ fx: {}, msg: "지금은 때가 아닌 것 같다." }) },
+  ]},
+];
+
+// ===== 엔딩 =====
+const ENDINGS = [
+  { id: "allround", emoji: "👑", title: "전설의 만능인", desc: "공부, 운동, 인기, 명성 전부 다! 풍산고 역사에 남을 졸업생.", hint: "모든 능력치 70 이상" },
+  { id: "univ",     emoji: "📚", title: "명문대 진학", desc: "뛰어난 성적으로 원하던 대학에 갔다!", hint: "지능 70+ & 시험 평균 2.5등급 이내" },
+  { id: "escape",   emoji: "🏃", title: "탈출의 전설", desc: "사감 선생님도 혀를 내두른 전설의 탈출왕이 되었다.", hint: "무단외출 6회 성공" },
+  { id: "council",  emoji: "🗳️", title: "학생회장", desc: "압도적 지지로 학생회장에 당선, 모두의 리더가 되었다!", hint: "사회성 70+ & 명성 60+" },
+  { id: "athlete",  emoji: "🏋️", title: "체육계 진출", desc: "체단실에서 다진 체력으로 운동선수가 되었다!", hint: "체력 70 이상" },
+  { id: "star",     emoji: "⭐", title: "풍산고 스타", desc: "모두가 이름을 아는 유명한 졸업생이 되었다!", hint: "명성 70 이상" },
+  { id: "nerd",     emoji: "🤓", title: "도서관의 유령", desc: "3년 내내 자습실에만 있었다. 친구는… 문제집?", hint: "자습 10회 이상 & 사회성 40 미만" },
+  { id: "normal",   emoji: "🎓", title: "평범한 졸업", desc: "특별하진 않아도 무사히 3년을 마쳤다.", hint: "무사히 졸업" },
+  { id: "transfer", emoji: "🚚", title: "전학", desc: "버티지 못하고 다른 학교로 떠났다…", hint: "능력치 관리 실패" },
+  { id: "expelled", emoji: "🚨", title: "퇴학", desc: "무단외출이 사감 선생님께 걸렸다!", hint: "무단외출 적발" },
+];
+
+function pickEnding(g) {
+  if (g.결과 === "전학") return "transfer";
+  if (g.결과 === "퇴학") return "expelled";
+  const s = g.능력치;
+  const avg = g.시험.reduce((a, b) => a + b, 0) / g.시험.length;
+  if (STATS.every(k => s[k] >= 70)) return "allround";
+  if (s["지능"] >= 70 && avg <= 2.5) return "univ";
+  if (g.외출성공 >= 6) return "escape";
+  if (s["사회성"] >= 70 && s["명성"] >= 60) return "council";
+  if (s["체력"] >= 70) return "athlete";
+  if (s["명성"] >= 70) return "star";
+  if ((g.횟수["자습"] || 0) >= 10 && s["사회성"] < 40) return "nerd";
+  return "normal";
+}
+
+// 엔딩 도감 (브라우저에 저장, 실패해도 게임은 정상 동작)
+const DEX_KEY = "pungsan-endings-v1";
+function loadDex() {
+  try { return new Set(JSON.parse(localStorage.getItem(DEX_KEY) || "[]")); } catch { return new Set(); }
+}
+function saveDex(set) {
+  try { localStorage.setItem(DEX_KEY, JSON.stringify([...set])); } catch {}
+}
+let dex = loadDex();
+
+// ===== 2. 게임 규칙 =====
 const randint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
-// ----- 2. 게임 규칙 함수 -----
 function newGame(focus) {
   const stats = { "지능": 50, "체력": 50, "사회성": 50, "명성": 50 };
   stats[focus] = 60;
-  return { 턴: 1, 능력치: stats, 위험: { "지능": 0, "체력": 0, "사회성": 0 }, 시험: [], 결과: "진행중" };
+  return { 턴: 1, 능력치: stats, 위험: { "지능": 0, "체력": 0, "사회성": 0 }, 시험: [],
+           결과: "진행중", 경계도: 0, 외출성공: 0, 횟수: {}, 지난이벤트: null };
 }
 
-function change(game, effects) {
-  for (const stat in effects) {
-    game.능력치[stat] = Math.max(0, Math.min(100, game.능력치[stat] + effects[stat]));
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// 능력치 변경 → 실제 변화량을 돌려준다
+function change(g, fx) {
+  const delta = {};
+  for (const k in fx) {
+    const before = g.능력치[k];
+    g.능력치[k] = clamp(before + fx[k], 0, 100);
+    if (g.능력치[k] !== before) delta[k] = g.능력치[k] - before;
+  }
+  return delta;
+}
+function changeSus(g, d) { g.경계도 = clamp(g.경계도 + (d || 0), 0, 85); }
+function outingRisk(g) { return clamp(OUTING_BASE_RISK + g.경계도, 0, 100); }
+
+function doActivity(g, name) {
+  g.횟수[name] = (g.횟수[name] || 0) + 1;
+  const act = ACTIVITIES[name];
+  if (name === "무단외출") {
+    if (randint(1, 100) <= outingRisk(g)) {
+      g.결과 = "퇴학";
+      return { msg: "🚨 무단외출이 사감 선생님께 걸렸다!", cls: "bad", delta: {} };
+    }
+    g.외출성공 += 1;
+    changeSus(g, OUTING_SUS);
+    const delta = change(g, act.fx);
+    return { msg: pick(["🌃 몰래 나가서 떡볶이를 먹고 왔다!", "🎮 PC방에서 친구들과 신나게 놀았다!", "🎬 심야 영화를 보고 무사히 복귀했다!"]), cls: "good", delta };
+  }
+  changeSus(g, act.sus);
+  const delta = change(g, act.fx);
+  return { msg: "✅ " + name + " 완료!", cls: "", delta };
+}
+
+function examGrade(score) {
+  if (score >= 80) return 1;
+  if (score >= 65) return 2;
+  if (score >= 50) return 3;
+  if (score >= 35) return 4;
+  return 5;
+}
+
+function endTurn(g) {
+  for (const k of STATS) change(g, { [k]: -DECAY });
+  changeSus(g, -SUS_DECAY);
+  for (const k in g.위험) {
+    if (g.능력치[k] < DANGER) g.위험[k] += 1; else g.위험[k] = 0;
+    if (g.위험[k] >= 2) g.결과 = "전학";
+  }
+  if (g.결과 === "진행중") {
+    if (g.턴 === LAST_TURN) g.결과 = "졸업";
+    else g.턴 += 1;
   }
 }
 
-function doActivity(game, name) {
-  if (name === "무단외출" && randint(1, 100) > OUTING_SUCCESS) {
-    game.결과 = "퇴학";
-    return ["🚨 무단외출이 사감 선생님께 걸렸다!", "bad"];
-  }
-  change(game, ACTIVITIES[name]);
-  return ["✅ " + name + " 성공!", ""];
+function turnLabel(t) {
+  return `${Math.ceil(t / 5)}학년 ${MONTHS[(t - 1) % 5]}`;
 }
 
-function takeExam(game) {
-  const score = game.능력치["지능"] + randint(-10, 10);
-  let grade;
-  if (score >= 80) grade = 1;
-  else if (score >= 65) grade = 2;
-  else if (score >= 50) grade = 3;
-  else if (score >= 35) grade = 4;
-  else grade = 5;
-  game.시험.push(grade);
-  return grade;
-}
-
-function endTurn(game) {
-  for (const stat of STATS) change(game, { [stat]: -DECAY });
-  for (const stat in game.위험) {
-    if (game.능력치[stat] < DANGER) game.위험[stat] += 1;
-    else game.위험[stat] = 0;
-    if (game.위험[stat] >= 2) game.결과 = "전학";
-  }
-  if (game.결과 === "진행중") {
-    if (game.턴 === LAST_TURN) game.결과 = "졸업";
-    else game.턴 += 1;
-  }
-}
-
-function ending(game) {
-  const s = game.능력치;
-  const average = game.시험.reduce((a, b) => a + b, 0) / game.시험.length;
-  if (s["지능"] >= 70 && average <= 2.5) return "📚 명문대 진학 엔딩: 뛰어난 성적으로 원하던 대학에 갔다!";
-  if (s["체력"] >= 70) return "🏋️ 체육계 진출 엔딩: 체단실에서 다진 체력으로 운동선수가 되었다!";
-  if (s["명성"] >= 70) return "⭐ 풍산고 스타 엔딩: 모두가 이름을 아는 유명한 졸업생이 되었다!";
-  return "🎓 평범한 졸업 엔딩: 특별하진 않아도 무사히 3년을 마쳤다.";
-}
-
-// ----- 3. 화면 -----
-const $log = document.getElementById("log");
-const $buttons = document.getElementById("buttons");
-const $status = document.getElementById("status");
-const $turn = document.getElementById("turn");
-const $examTag = document.getElementById("examTag");
-const $bars = document.getElementById("bars");
+// ===== 3. 화면 =====
+const $ = id => document.getElementById(id);
+const $log = $("log"), $buttons = $("buttons");
 let game = null;
+let quizTimer = null;
 
 const barEls = {};
-for (const stat of STATS) {
+for (const k of STATS) {
   const wrap = document.createElement("div");
   wrap.className = "stat";
   wrap.innerHTML = `
-    <div class="stat-label"><span class="name">${stat}</span><span class="val">50</span></div>
-    <div class="bar"><span style="background:var(--c-${stat})"></span>${stat !== "명성" ? '<i class="danger-line"></i>' : ""}</div>`;
-  $bars.appendChild(wrap);
-  barEls[stat] = { fill: wrap.querySelector(".bar > span"), val: wrap.querySelector(".val"), name: wrap.querySelector(".name") };
+    <div class="stat-label"><span>${k}</span><span class="val"></span></div>
+    <div class="bar"><span style="background:var(--c-${k})"></span>${k !== "명성" ? '<i class="danger-line"></i>' : ""}</div>`;
+  $("bars").appendChild(wrap);
+  barEls[k] = { row: wrap, fill: wrap.querySelector(".bar > span"), val: wrap.querySelector(".val") };
+}
+for (let i = 1; i <= LAST_TURN; i++) {
+  const dot = document.createElement("i");
+  if (EXAM_TURNS.includes(i)) dot.className = "exam";
+  $("progress").appendChild(dot);
 }
 
 function say(text, cls = "") {
@@ -238,90 +366,235 @@ function say(text, cls = "") {
   p.textContent = text;
   if (cls) p.className = cls;
   $log.appendChild(p);
+  return p;
 }
 function clearLog() { $log.innerHTML = ""; }
 
-function showButtons(names, handler, opts = {}) {
+function fxText(delta, sus) {
+  const parts = Object.entries(delta).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v}`);
+  if (sus) parts.push(`경계도 ${sus > 0 ? "+" : ""}${sus}`);
+  return parts.length ? "  → " + parts.join(" · ") : "";
+}
+
+function flash(delta) {
+  for (const k in delta) {
+    const row = barEls[k].row;
+    row.classList.remove("up", "down");
+    void row.offsetWidth;
+    row.classList.add(delta[k] > 0 ? "up" : "down");
+    setTimeout(() => row.classList.remove("up", "down"), 900);
+  }
+}
+
+function shake() {
+  const c = $("logCard");
+  c.classList.remove("shake"); void c.offsetWidth; c.classList.add("shake");
+}
+
+// buttons: [{label, hint?, cls?, onClick}]
+function showButtons(list) {
   $buttons.innerHTML = "";
-  for (const name of names) {
+  for (const item of list) {
     const b = document.createElement("button");
-    b.textContent = name;
-    if (opts.hints && opts.hints[name]) {
+    b.textContent = item.label;
+    if (item.hint) {
       const sm = document.createElement("small");
-      sm.textContent = opts.hints[name];
+      sm.textContent = item.hint;
       b.appendChild(sm);
     }
-    if (opts.primary) b.className = "primary";
-    b.addEventListener("click", () => {
-      $buttons.innerHTML = "";   // 중복 클릭 방지
-      handler(name);
-    }, { once: true });
+    if (item.cls) b.className = item.cls;
+    b.addEventListener("click", () => { $buttons.innerHTML = ""; item.onClick(); }, { once: true });
     $buttons.appendChild(b);
   }
 }
+const one = (label, onClick) => showButtons([{ label, cls: "primary", onClick }]);
 
 function showStatus() {
-  $status.hidden = false;
-  $turn.textContent = `${game.턴}/${LAST_TURN}턴`;
-  $examTag.textContent = EXAM_TURNS.includes(game.턴) && game.결과 === "진행중" ? "📋 이번 턴은 시험!" : "";
-  for (const stat of STATS) {
-    const v = game.능력치[stat];
-    barEls[stat].fill.style.width = v + "%";
-    barEls[stat].val.textContent = v;
-    const danger = stat in game.위험 && v < DANGER;
-    barEls[stat].val.className = danger ? "val warn" : "val";
+  const g = game;
+  $("status").hidden = false;
+  $("turn").textContent = `${turnLabel(g.턴)} · ${g.턴}/${LAST_TURN}턴`;
+  const exam = EXAM_TURNS.includes(g.턴) && g.결과 === "진행중";
+  $("tag").textContent = exam ? "📋 이번 턴은 시험!" : `다음 시험: ${EXAM_TURNS.find(t => t > g.턴) || "-"}턴`;
+  $("tag").className = exam ? "tag exam" : "tag";
+  [...$("progress").children].forEach((d, i) => d.classList.toggle("done", i + 1 < g.턴 || (i + 1 === g.턴 && g.결과 !== "진행중")));
+  for (const k of STATS) {
+    const v = g.능력치[k];
+    barEls[k].fill.style.width = v + "%";
+    const danger = k in g.위험 && v < DANGER;
+    barEls[k].val.textContent = (danger ? "⚠️ " : "") + v;
+    barEls[k].val.className = danger ? "val warn" : "val";
+  }
+  $("susVal").textContent = `${g.경계도} (외출 적발 ${outingRisk(g)}%)`;
+  $("susFill").style.width = g.경계도 + "%";
+}
+
+function renderDex() {
+  $("dex").hidden = false;
+  $("dexTitle").textContent = `📖 엔딩 도감 ${dex.size}/${ENDINGS.length}`;
+  const grid = $("dexGrid");
+  grid.innerHTML = "";
+  for (const e of ENDINGS) {
+    const d = document.createElement("div");
+    const got = dex.has(e.id);
+    d.className = "dex-item" + (got ? "" : " locked");
+    d.innerHTML = got ? `<b>${e.emoji} ${e.title}</b>${e.hint}` : `<b>🔒 ???</b>${e.id === "allround" || e.id === "escape" || e.id === "nerd" ? "숨겨진 엔딩" : e.hint}`;
+    grid.appendChild(d);
   }
 }
 
+// ----- 타이틀 -----
 function showTitle() {
+  clearInterval(quizTimer);
   game = null;
-  $status.hidden = true;
+  $("status").hidden = true;
   clearLog();
-  say("🏫 풍산고에서 졸업하기! 15턴을 버티면 졸업한다.", "big");
-  say("지능·체력·사회성이 25 미만으로 2턴 연속이면 전학.");
-  say("집중할 능력치를 골라 입학하자! (그 능력치는 60, 나머지는 50으로 시작)");
-  showButtons(STATS, onStart, { primary: true });
+  say("🏫 풍산고 입학을 축하합니다!", "big");
+  say("3년(15턴) 동안 살아남아 졸업하자.\n· 매 턴 활동을 하나 고른다. 가끔 예상 못 한 사건이 터진다.\n· 3·6·9·12·15턴엔 시험! 암산 문제를 맞히면 점수가 오른다.\n· 무단외출은 짜릿하지만, 할수록 사감 선생님의 경계가 높아진다.\n· 지능·체력·사회성이 25 미만으로 2턴 연속이면 전학.");
+  say("집중할 능력치를 골라 입학하자! (그 능력치는 60, 나머지는 50)", "fx");
+  showButtons(STATS.map(k => ({ label: k, cls: "primary", onClick: () => { game = newGame(k); $("dex").hidden = true; startTurn(); } })));
+  renderDex();
 }
 
-function onStart(focus) {
-  game = newGame(focus);
-  clearLog();
-  startTurn();
-}
-
+// ----- 턴 진행 -----
 function startTurn() {
   showStatus();
   clearLog();
-  say(`📅 ${game.턴}턴 시작! 무엇을 할까?`, "big");
-  showButtons(Object.keys(ACTIVITIES), onActivity, { hints: ACTIVITY_HINT });
+  say(`📅 ${turnLabel(game.턴)}`, "big");
+  if (game.턴 > 1 && randint(1, 100) <= EVENT_CHANCE) {
+    let ev;
+    do { ev = pick(EVENTS); } while (ev === game.지난이벤트);
+    game.지난이벤트 = ev;
+    say(ev.text, "event");
+    showButtons(ev.choices.map(c => ({ label: c.label, onClick: () => {
+      const r = c.run(game);
+      changeSus(game, r.sus);
+      const delta = change(game, r.fx);
+      say(r.msg);
+      const t = fxText(delta, r.sus);
+      if (t) say(t, "fx");
+      showStatus(); flash(delta);
+      chooseActivity();
+    }})));
+  } else {
+    chooseActivity();
+  }
+}
+
+function chooseActivity() {
+  say("무엇을 할까?");
+  showButtons(Object.keys(ACTIVITIES).map(name => {
+    const act = ACTIVITIES[name];
+    const risky = name === "무단외출";
+    return {
+      label: name,
+      hint: risky ? `${act.hint} · 적발 ${outingRisk(game)}%` : act.hint,
+      cls: risky ? "risky" : "",
+      onClick: () => onActivity(name),
+    };
+  }));
 }
 
 function onActivity(name) {
-  const [msg, cls] = doActivity(game, name);
-  say(msg, cls);
-  if (game.결과 === "진행중") {
-    if (EXAM_TURNS.includes(game.턴)) say(`📋 시험 결과: ${takeExam(game)}등급`);
-    endTurn(game);
-  }
-  showStatus();
-  for (const stat in game.위험) {
-    if (game.위험[stat] === 1) say(`⚠️ ${stat}이(가) 25 미만! 다음 턴에도 낮으면 전학이다.`, "warn");
-  }
-  if (game.결과 === "진행중") showButtons(["다음 턴"], startTurn, { primary: true });
-  else showButtons(["결과 보기"], onResult, { primary: true });
+  const before = game.경계도;
+  const r = doActivity(game, name);
+  say(r.msg, r.cls);
+  const t = fxText(r.delta, game.경계도 - before);
+  if (t) say(t, "fx");
+  showStatus(); flash(r.delta);
+  if (game.결과 !== "진행중") { shake(); return one("결과 보기", onResult); }
+  if (EXAM_TURNS.includes(game.턴)) one("📋 시험 보러 가기", startQuiz);
+  else finishTurn();
 }
 
-function onResult() {
-  clearLog();
-  if (game.결과 === "졸업") {
-    say("🎓 졸업 성공!", "big");
-    say(ending(game));
-  } else {
-    say(`💀 게임 오버: ${game.결과} (${game.턴}턴)`, "big bad");
+function finishTurn() {
+  endTurn(game);
+  showStatus();
+  for (const k in game.위험) {
+    if (game.위험[k] === 1) say(`⚠️ ${k}이(가) 25 미만! 다음 턴에도 낮으면 전학이다.`, "warn");
   }
-  for (const stat of STATS) say(`  ${stat}: ${game.능력치[stat]}`);
-  if (game.시험.length) say(`  시험 등급: ${game.시험.join(" → ")}`);
-  showButtons(["다시 하기"], showTitle, { primary: true });
+  if (game.결과 === "진행중") one("다음 턴 ▶", startTurn);
+  else { if (game.결과 === "전학") shake(); one("결과 보기", onResult); }
+}
+
+// ----- 시험 미니게임 -----
+function makeQuestion() {
+  const type = randint(0, 2);
+  let q, a;
+  if (type === 0) { const x = randint(12, 89), y = randint(12, 89); q = `${x} + ${y}`; a = x + y; }
+  else if (type === 1) { const x = randint(40, 99), y = randint(11, 39); q = `${x} − ${y}`; a = x - y; }
+  else { const x = randint(3, 9), y = randint(4, 12); q = `${x} × ${y}`; a = x * y; }
+  const opts = new Set([a]);
+  while (opts.size < 4) { const d = randint(-10, 10); if (d !== 0 && a + d > 0) opts.add(a + d); }
+  return { q, a, opts: [...opts].sort(() => Math.random() - .5) };
+}
+
+function startQuiz() {
+  let idx = 0, correct = 0;
+  const next = () => {
+    if (idx >= QUIZ_COUNT) return endQuiz(correct);
+    idx++;
+    const { q, a, opts } = makeQuestion();
+    clearLog();
+    say(`📋 ${Math.ceil(game.턴 / 3)}번째 시험 · 문제 ${idx}/${QUIZ_COUNT}`, "big");
+    say(`${q} = ?`, "huge");
+    const timer = document.createElement("div");
+    timer.className = "timer";
+    timer.innerHTML = "<span></span>";
+    $log.appendChild(timer);
+    const fill = timer.firstChild;
+    const start = Date.now();
+    const answer = val => {
+      clearInterval(quizTimer);
+      $buttons.innerHTML = "";
+      if (val === a) { correct++; say("⭕ 정답!", "good"); }
+      else say(val === null ? `⏰ 시간 초과! 정답은 ${a}` : `❌ 땡! 정답은 ${a}`, "bad");
+      setTimeout(next, 700);
+    };
+    clearInterval(quizTimer);
+    quizTimer = setInterval(() => {
+      const left = 1 - (Date.now() - start) / (QUIZ_SECONDS * 1000);
+      fill.style.width = Math.max(0, left * 100) + "%";
+      if (left <= 0) answer(null);
+    }, 50);
+    showButtons(opts.map(o => ({ label: String(o), onClick: () => answer(o) })));
+  };
+  next();
+}
+
+function endQuiz(correct) {
+  clearLog();
+  const bonus = correct * QUIZ_BONUS;
+  const luck = randint(-10, 10);
+  const score = game.능력치["지능"] + luck + bonus;
+  const grade = examGrade(score);
+  game.시험.push(grade);
+  say(`📋 시험 결과`, "big");
+  say(`${grade}등급`, "huge");
+  say(`지능 ${game.능력치["지능"]} + 컨디션 ${luck >= 0 ? "+" : ""}${luck} + 암산 보너스 +${bonus} (${correct}/${QUIZ_COUNT} 정답)`, "fx");
+  if (grade === 1) { const d = change(game, { "명성": 5 }); say("🎉 전교권 성적! 명성 +5", "good"); flash(d); }
+  if (grade === 5) { const d = change(game, { "사회성": -3 }); say("😢 부모님께 전화가 왔다… 사회성 -3", "bad"); flash(d); }
+  showStatus();
+  finishTurn();
+}
+
+// ----- 결과 -----
+function onResult() {
+  clearInterval(quizTimer);
+  const g = game;
+  const id = pickEnding(g);
+  const e = ENDINGS.find(x => x.id === id);
+  const isNew = !dex.has(id);
+  dex.add(id); saveDex(dex);
+  clearLog();
+  say(g.결과 === "졸업" ? "🎓 졸업 성공!" : `💀 게임 오버 (${g.턴}턴)`, g.결과 === "졸업" ? "big good" : "big bad");
+  say(`${e.emoji} ${e.title}`, "huge");
+  say(e.desc);
+  if (isNew) say("✨ 새로운 엔딩을 도감에 기록했다!", "good");
+  say(STATS.map(k => `${k} ${g.능력치[k]}`).join(" · "), "fx");
+  if (g.시험.length) say(`시험 등급: ${g.시험.join(" → ")}`, "fx");
+  if (g.외출성공) say(`무단외출 성공: ${g.외출성공}회`, "fx");
+  one("다시 하기", showTitle);
+  renderDex();
 }
 
 showTitle();
