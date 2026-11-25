@@ -354,16 +354,16 @@ const CONFIG = {
   VACATION_TURNS: [3, 5, 8, 10, 13],                  // 여름·겨울방학 (3학년 겨울은 수능이라 없음)
   // 스트레스: 기숙사 생활은 매일 쌓인다
   START_STRESS: 20,
-  STRESS_PER_TURN: 18,       // 턴마다 저절로 쌓이는 스트레스
+  STRESS_PER_TURN: 21,       // 턴마다 저절로 쌓이는 스트레스
   STRESS_HIGH: 70,          // 이 이상이면 성공률 -10%, 시험 실력 하락
   STRESS_MAX: 100,          // 도달하면 번아웃
-  HOME_RELIEF: 6,           // 월 귀가(필수) 스트레스 회복량
+  HOME_RELIEF: 4,           // 월 귀가(필수) 스트레스 회복량
   // 벌점: 기숙사 규칙 위반
   PENALTY_WARN: 10,         // 이 점수를 넘으면 부모님 호출
   PENALTY_OUT: 20,          // 이 점수면 강제 퇴사 = 퇴학
   // 반입 금지물품
   CONTRA_ENTRY_CATCH: 0.25, // 복귀할 때 짐 검사에 걸릴 확률
-  CONTRA_INSPECT: 0.12,     // 매 턴 물건 하나당 방 검사에 걸릴 확률
+  CONTRA_INSPECT: 0.15,     // 매 턴 물건 하나당 방 검사에 걸릴 확률
   CONTRA_PENALTY: 4,        // 걸리면 벌점
 };
 
@@ -652,7 +652,7 @@ function confiscate(s, id) {
   delete s.contraLoc[id];
   if (loc === 'me') return { text: `${c.emoji} ${c.name} (내 옷장) 압수, 벌점 +${CONFIG.CONTRA_PENALTY}`, deltas: { penalty: CONFIG.CONTRA_PENALTY, stress: 4 } };
   const rm = roommateById(loc);
-  if (loc === 'yumin') return {
+  if (loc === 'yumin' && id === 'kettle') return {
     text: `${c.emoji} ${c.name}${josa(c.name, '이', '가')} 유민이 옷장에서 나왔다! 유민이가 억울하게 벌점을 받았는데… "됐어, 전기포트로 라면 맨날 얻어먹었잖아. 봐준다." 유민이가 용서해 줬다.`,
     deltas: { stress: 2 }, forgiven: true };
   setAff(s, loc, 0);
@@ -2130,7 +2130,7 @@ const ACHV_KEY = 'pungsan-achievements-v1';
 // ---------- 자동 업데이트 ----------
 // 새 버전을 올릴 때: 아래 APP_VERSION 과 version.json 의 "version" 을 같은 값으로 바꾼다.
 // 그러면 접속 중인 사람은 1분 안에 알림을 받고, 지금 판이 끝나면 새 버전으로 바뀐다.
-const APP_VERSION = '2026.11.24-9';
+const APP_VERSION = '2026.11.25-1';
 const VERSION_CHECK_MS = 60 * 1000;
 let remoteVersion = null;     // 서버에 올라온 최신 버전
 let newVersionReady = false;  // 새 버전이 기다리는 중인지
