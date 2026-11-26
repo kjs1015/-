@@ -377,7 +377,7 @@ const CONFIG = {
 
 // ---------- 2. 기본 데이터 ----------
 const STATS = ['int', 'hp', 'soc', 'fame'];
-const STAT_NAME = { int: '지능', hp: '체력', soc: '사회성', fame: '명성', stress: '스트레스', penalty: '벌점', aff: '룸메 친밀도', warden: '사감 호감도' };
+const STAT_NAME = { int: '지능', hp: '체력', soc: '사회성', fame: '명성', stress: '스트레스', penalty: '벌점', aff: '룸메 친밀도', warden: '해곤 쌤 호감도' };
 const STAT_EMOJI = { int: '🧠', hp: '💪', soc: '🤝', fame: '⭐', stress: '😵', penalty: '🚨', aff: '🛏️', warden: '👮' };
 const ALL_KEYS = ['int', 'hp', 'soc', 'fame', 'stress', 'penalty', 'aff', 'warden'];
 const BAD_KEYS = ['stress', 'penalty'];   // 오르면 나쁜 값
@@ -491,7 +491,7 @@ function changeStat(s, key, delta) {
   if (key === 'stress') { const b = s.stress; s.stress = clamp(b + delta, 0, CONFIG.STRESS_MAX); return s.stress - b; }
   if (key === 'warden') { const b = s.warden; s.warden = clamp(b + delta, 0, 100); return s.warden - b; }
   if (key === 'penalty') {
-    // 사감 선생님 호감도가 높으면 벌점을 1점 깎아 주고, 낮으면 1점 더 준다. 벌점을 받으면 호감도도 떨어진다.
+    // 해곤 쌤 호감도가 높으면 벌점을 1점 깎아 주고, 낮으면 1점 더 준다. 벌점을 받으면 호감도도 떨어진다.
     if (delta > 0) { if (s.warden >= 70) delta = Math.max(1, delta - 1); else if (s.warden <= 30) delta += 1; }
     const b = s.penalty; s.penalty = Math.max(0, b + delta);
     if (s.penalty > b) { s.penaltyTotal = (s.penaltyTotal || 0) + (s.penalty - b); s.warden = clamp(s.warden - (s.penalty - b) * 2, 0, 100); }
@@ -671,7 +671,7 @@ function leaveShop(s) { if (s.phase === 'shop') s.phase = s.calendarQueue.length
 
 // ---------- 8. 벌점 판정 (선택 결과가 나올 때마다 확인) ----------
 // 금지물품 압수: 어디 옷장에서 나왔느냐에 따라 결과가 다르다
-// 사감 선생님 호감도에 따라 검사가 느슨하거나 깐깐해진다
+// 해곤 쌤 호감도에 따라 검사가 느슨하거나 깐깐해진다
 function wardenInspectMod(s) { return s.warden >= 70 ? -0.04 : (s.warden <= 30 ? 0.06 : 0); }
 
 function confiscate(s, id) {
@@ -719,14 +719,14 @@ function checkPenalty(s) {
 const CALENDAR_EVENTS = {
   transfer: {
     date: '5월 초', title: '🧳 전학생이 왔다',
-    text: '서울에서 전학 온 "서하"가 우리 반에 왔다. 기숙사 생활은 처음이라 잔뜩 긴장한 얼굴이다. 하필 옆자리다.',
+    text: '서울에서 전학 온 도현이가 우리 반에 왔다. 기숙사 생활은 처음이라 잔뜩 긴장한 얼굴이다. 하필 옆자리다.',
     choices: [
       { label: '먼저 말 걸고 기숙사 구경시켜 준다', exp: { soc: 5, stress: -3 },
-        run: () => ({ text: '"여기 매점은 9시에 닫아. 점호는 10시 반." 서하가 고맙다며 웃었다. 첫 친구가 됐다.', deltas: { soc: 5, stress: -3 }, transfer: 'friend' }) },
+        run: () => ({ text: '"여기 매점은 9시에 닫아. 점호는 10시 반." 도현이가 고맙다며 웃었다. 첫 친구가 됐다.', deltas: { soc: 5, stress: -3 }, transfer: 'friend' }) },
       { label: '성적표부터 궁금하다 (경쟁 모드)', exp: { int: 3, stress: 3 },
-        run: () => ({ text: '서하가 전 학교 전교 3등이었다는 소문. 찬동이에 이어 라이벌이 하나 더 생겼다.', deltas: { int: 3, stress: 3 }, transfer: 'rival' }) },
+        run: () => ({ text: '도현이가 전 학교 전교 3등이었다는 소문. 찬동이에 이어 라이벌이 하나 더 생겼다.', deltas: { int: 3, stress: 3 }, transfer: 'rival' }) },
       { label: '별 관심 없다', exp: {},
-        run: () => ({ text: '서하는 금방 다른 애들과 친해졌다. 뭐, 그런가 보다.', deltas: {}, transfer: 'none' }) },
+        run: () => ({ text: '도현이는 금방 다른 애들과 친해졌다. 뭐, 그런가 보다.', deltas: {}, transfer: 'none' }) },
     ],
   },
   birthday: {
@@ -737,7 +737,7 @@ const CALENDAR_EVENTS = {
         run: s => {
           const vac = [7, 8, 1, 2].includes(s.birthMonth);
           if (vac) return { text: `방학이라 집에서 맞는 생일. 엄마가 끓여 준 미역국에 케이크까지.${s.aff >= 60 ? ' 룸메들이 단톡방에 생일 축하 폭탄을 날려 줬다.' : ''}`, deltas: { stress: -10, hp: 3, aff: s.aff >= 60 ? 3 : 0 } };
-          if (s.aff >= 70) { s.bigBirthday = true; return { text: '점호 끝나고 불을 끄자마자 룸메들이 초 꽂은 케이크를 들고 들어왔다. 옆방 애들까지 몰려와 생일 축하 노래를 불렀다! (사감 선생님도 오늘만 봐주셨다)', deltas: { soc: 6, fame: 3, stress: -14, aff: 5 } }; }
+          if (s.aff >= 70) { s.bigBirthday = true; return { text: '점호 끝나고 불을 끄자마자 룸메들이 초 꽂은 케이크를 들고 들어왔다. 옆방 애들까지 몰려와 생일 축하 노래를 불렀다! (해곤 쌤도 오늘만 봐주셨다)', deltas: { soc: 6, fame: 3, stress: -14, aff: 5 } }; }
           if (s.aff >= 40) return { text: '룸메들이 매점 빵에 초 하나를 꽂아서 축하해 줬다. 소박하지만 따뜻하다.', deltas: { stress: -8, aff: 3 } };
           if (hasRoommate(s, 'jaewon')) return { text: '아무도 모르는 줄 알았는데, 책상 위에 작은 컵케이크와 "생일 축하" 포스트잇이 붙어 있다. 누구 글씨인지 모르겠다.', deltas: { stress: -6 } };
           return { text: '아무도 몰랐다. 혼자 매점 빵을 사 먹었다. 방 분위기가 이렇다 보니…', deltas: { stress: 6 } };
@@ -995,7 +995,7 @@ const SPECIAL_EVENTS = [
     id: 'outing', name: '무단외출', emoji: '🏃', risk: true,
     desc: '점호 전에 담 넘어서 막차 타고 안동 시내 찜닭 먹고 오기',
     hint: '성공: 사회성 +18, 스트레스 -25 / 실패: 벌점 +12',
-    note: '성공할수록 사감 선생님이 의심한다 (다음 성공률 -10%)',
+    note: '성공할수록 해곤 쌤이 의심한다 (다음 성공률 -10%)',
     successChance: s => clamp(0.75 - 0.10 * s.outingCount + (s.stats.soc >= 70 ? 0.05 : 0), 0.3, 0.9),
     run(s, ok) {
       if (ok) {
@@ -1003,12 +1003,12 @@ const SPECIAL_EVENTS = [
         if (roll(0.5)) s.rumorPending = true;   // 누군가 사진을 찍었을지도…
         return { ok: true, text: '논길을 가로질러 버스 정류장까지 전력질주. 찜닭골목의 찜닭은 인생 최고의 맛! 이불 인형 덕에 무사 귀환.', deltas: { soc: 18, stress: -25 } };
       }
-      if (s.warden >= 80 && !s.wardenPardon) {   // 사감 선생님의 단 한 번 자비
+      if (s.warden >= 80 && !s.wardenPardon) {   // 해곤 쌤의 단 한 번 자비
         s.wardenPardon = true;
-        return { ok: false, text: '담을 넘는 순간… 손전등 불빛. 사감 선생님이 한참을 보더니 말했다. "…이번 한 번만이다. 들어가." 못 본 척해 주셨다.', deltas: { warden: -25, stress: 10 } };
+        return { ok: false, text: '담을 넘는 순간… 손전등 불빛. 해곤 쌤이 한참을 보더니 말했다. "…이번 한 번만이다. 들어가." 못 본 척해 주셨다.', deltas: { warden: -25, stress: 10 } };
       }
       s.caughtCount += 1;
-      return { ok: false, text: '담을 넘는 순간… 손전등 불빛. "어디 가니?" 사감 선생님이었다. 사감실 직행.', deltas: { penalty: 12, fame: -6, stress: 12, warden: -10 } };
+      return { ok: false, text: '담을 넘는 순간… 손전등 불빛. "어디 가니?" 해곤 쌤이었다. 사감실 직행.', deltas: { penalty: 12, fame: -6, stress: 12, warden: -10 } };
     },
   },
   {
@@ -1050,8 +1050,8 @@ const SPECIAL_EVENTS = [
     note: '벌점이 없으면 대신 사회성 +4',
     successChance: () => 1,
     run: s => (s.penalty > 0
-      ? { ok: true, text: '복도 왁스칠까지 끝냈다. 사감 선생님이 상점 카드에 도장을 꾹.', deltas: { penalty: -6, fame: 3, hp: -3, warden: 8 } }
-      : { ok: true, text: '벌점은 없지만 봉사는 즐겁다. 사감 선생님이 이름을 기억해 주셨다.', deltas: { soc: 4, fame: 3, hp: -3, warden: 8 } }),
+      ? { ok: true, text: '복도 왁스칠까지 끝냈다. 해곤 쌤이 상점 카드에 도장을 꾹.', deltas: { penalty: -6, fame: 3, hp: -3, warden: 8 } }
+      : { ok: true, text: '벌점은 없지만 봉사는 즐겁다. 해곤 쌤이 이름을 기억해 주셨다.', deltas: { soc: 4, fame: 3, hp: -3, warden: 8 } }),
   },
   {
     id: 'rest', name: '자유 시간에 푹 쉬기', emoji: '🛌', risk: false,
@@ -1143,7 +1143,7 @@ const RANDOM_EVENTS = [
       { label: '같이 먹는다', note: '25% 확률로 순찰에 걸림 (전기포트가 있으면 10%)', exp: { stress: -10, aff: 8 },
         run: s => rollS(s, s.contra.includes('kettle') ? 0.9 : 0.75)
           ? { text: s.contra.includes('kettle') ? '전기포트로 끓인 라면은 차원이 다르다. 유민이가 "인생 라면"이라며 감동했다.' : '이불 텐트 속 컵라면. 유민이와는 이제 전우다.', deltas: { soc: 3, stress: -10, aff: s.contra.includes('kettle') ? 12 : 8 } }
-          : { text: '국물 냄새에 사감 선생님이 문을 열었다. 둘이 나란히 반성문.', deltas: { penalty: 4, stress: 5, aff: 4 } } },
+          : { text: '국물 냄새에 해곤 쌤이 문을 열었다. 둘이 나란히 반성문.', deltas: { penalty: 4, stress: 5, aff: 4 } } },
       { label: '참는다', exp: { hp: 2, aff: -6 },
         run: () => ({ text: '"의리 없네." 유민이가 혼자 후루룩. 냄새 때문에 잠이 안 온다.', deltas: { hp: 2, stress: 3, aff: -6 } }) },
     ],
@@ -1197,7 +1197,7 @@ const RANDOM_EVENTS = [
     ],
   },
   {
-    id: 'rm_coldwar', title: '🥶 룸메와의 냉전', text: '룸메가 사감 선생님께 네가 늦게 들어온 걸 말한 것 같다. 방 공기가 얼음장이다.',
+    id: 'rm_coldwar', title: '🥶 룸메와의 냉전', text: '룸메가 해곤 쌤께 네가 늦게 들어온 걸 말한 것 같다. 방 공기가 얼음장이다.',
     when: s => s.aff <= 30, weight: () => 1.6,
     choices: [
       { label: '정면으로 따진다', note: '사회성 높을수록 화해 성공↑', exp: { aff: 5 },
@@ -1217,7 +1217,7 @@ const RANDOM_EVENTS = [
     choices: [
       { label: '옷장 안쪽 깊숙이 더 숨긴다', note: '물건이 많을수록 걸리기 쉽다 · 친구 옷장에서 나오면…', exp: { stress: 4 },
         run: s => {
-          if (rollS(s, clamp(0.75 - s.contra.length * 0.1, 0.3, 0.75))) return { text: '사감 선생님 손전등이 옷장 바로 앞을 지나갔다. 무사 통과. 심장이 아직도 뛴다.', deltas: { stress: 4 } };
+          if (rollS(s, clamp(0.75 - s.contra.length * 0.1, 0.3, 0.75))) return { text: '해곤 쌤 손전등이 옷장 바로 앞을 지나갔다. 무사 통과. 심장이 아직도 뛴다.', deltas: { stress: 4 } };
           const res = s.contra.slice().map(id => confiscate(s, id));
           return { text: '옷장 문이 열렸다…<br>' + res.map(r => '· ' + r.text).join('<br>'), deltas: mergeDeltas(res.map(r => r.deltas).concat([{ stress: 4 }])) };
         } },
@@ -1225,15 +1225,15 @@ const RANDOM_EVENTS = [
         run: s => { const lost = s.contra.splice(0); s.contraLoc = {}; return { text: `친구 옷장에 숨긴 것까지 전부 "제 거예요" 하고 내놨다. ${lost.map(id => contraOf(id).emoji + ' ' + contraOf(id).name).join(', ')}. "솔직해서 이번만 봐준다." 벌점은 조금만.`, deltas: { penalty: 2, stress: -2, warden: 8 } }; } },
     ],
   },
-  // ----- 사감 선생님 -----
+  // ----- 해곤 쌤 -----
   {
-    id: 'warden_errand', title: '👮 사감 선생님의 부탁', text: '사감 선생님이 복도에서 불러 세웠다. "택배가 산더미인데, 정리 좀 도와줄 수 있니?"',
+    id: 'warden_errand', title: '👮 해곤 쌤의 부탁', text: '해곤 쌤이 복도에서 불러 세웠다. "택배가 산더미인데, 정리 좀 도와줄 수 있니?"',
     when: () => true, weight: () => 0.9,
     choices: [
       { label: '기꺼이 돕는다', exp: { warden: 10, hp: -3 },
-        run: () => ({ text: '한 시간 동안 택배 상자를 날랐다. "고맙다, 기억해 두마." 사감 선생님이 귤 하나를 쥐여 주셨다.', deltas: { warden: 10, hp: -3, stress: -2 } }) },
+        run: () => ({ text: '한 시간 동안 택배 상자를 날랐다. "고맙다, 기억해 두마." 해곤 쌤이 귤 하나를 쥐여 주셨다.', deltas: { warden: 10, hp: -3, stress: -2 } }) },
       { label: '"숙제가 많아서요…"', exp: { warden: -3 },
-        run: () => ({ text: '사감 선생님이 고개를 끄덕였지만, 표정이 조금 서운해 보였다.', deltas: { warden: -3, int: 2 } }) },
+        run: () => ({ text: '해곤 쌤이 고개를 끄덕였지만, 표정이 조금 서운해 보였다.', deltas: { warden: -3, int: 2 } }) },
     ],
   },
   // ----- 담임 선생님 상담 -----
@@ -1252,7 +1252,7 @@ const RANDOM_EVENTS = [
     when: s => s.penalty >= 8 || lastSchoolGrade(s) >= 4, weight: () => 1.4,
     choices: [
       { label: '솔직하게 털어놓고 약속한다', exp: { penalty: -2, stress: 4, warden: 5 },
-        run: () => ({ text: '선생님이 사감 선생님께 잘 말씀드리겠다고 하셨다. 벌점 일부를 상쇄해 주셨다.', deltas: { penalty: -2, stress: 4, warden: 5 } }) },
+        run: () => ({ text: '선생님이 해곤 쌤께 잘 말씀드리겠다고 하셨다. 벌점 일부를 상쇄해 주셨다.', deltas: { penalty: -2, stress: 4, warden: 5 } }) },
       { label: '핑계를 댄다', note: '40% 확률로 넘어간다', exp: { stress: 3 },
         run: s => rollS(s, 0.4)
           ? { text: '"그래, 힘들었구나." 선생님이 믿어 주셨다. 양심이 좀 찔린다.', deltas: { stress: -2 } }
@@ -1271,25 +1271,25 @@ const RANDOM_EVENTS = [
         run: () => ({ text: '"괜찮아, 다들 그래." 선생님이 진로 검사지를 건네주셨다.', deltas: { stress: 3, soc: 2 } }) },
     ],
   },
-  // ----- 전학생 서하 -----
+  // ----- 전학생 도현 -----
   {
-    id: 'ts_friend', title: '🧳 서하의 서울 간식', text: '서하가 서울 집에서 보내온 간식 박스를 들고 왔다. "기숙사 적응 도와준 거 고마워서!"',
+    id: 'ts_friend', title: '🧳 도현이의 서울 간식', text: '도현이가 서울 집에서 보내온 간식 박스를 들고 왔다. "기숙사 적응 도와준 거 고마워서!"',
     when: s => s.transfer === 'friend', weight: () => 1.2,
     choices: [
       { label: '같이 나눠 먹으며 수다', exp: { soc: 5, stress: -6 },
-        run: () => ({ text: '서울 얘기, 풍산 얘기. 서하는 이제 논밭 풍경이 좋다고 했다.', deltas: { soc: 5, stress: -6 } }) },
+        run: () => ({ text: '서울 얘기, 풍산 얘기. 도현이는 이제 논밭 풍경이 좋다고 했다.', deltas: { soc: 5, stress: -6 } }) },
       { label: '같이 시험 공부하자고 한다', exp: { int: 5, stress: -2 },
-        run: () => ({ text: '서하의 서울 학원 필기가 엄청나다. 서로 모르는 걸 채워 줬다.', deltas: { int: 5, stress: -2 } }) },
+        run: () => ({ text: '도현이의 서울 학원 필기가 엄청나다. 서로 모르는 걸 채워 줬다.', deltas: { int: 5, stress: -2 } }) },
     ],
   },
   {
-    id: 'ts_rival', title: '⚔️ 서하와의 성적 경쟁', text: '"이번 시험, 서하가 너보다 1점 높았대." 복도에 소문이 돈다.',
+    id: 'ts_rival', title: '⚔️ 도현이와의 성적 경쟁', text: '"이번 시험, 도현이가 너보다 1점 높았대." 복도에 소문이 돈다.',
     when: s => s.transfer === 'rival', weight: () => 1.2,
     choices: [
       { label: '다음엔 반드시 이긴다', exp: { int: 6, stress: 6 },
         run: () => ({ text: '연등실 불을 제일 늦게 끄는 사람이 둘로 늘었다.', deltas: { int: 6, stress: 6 } }) },
       { label: '쿨하게 축하해 준다', exp: { soc: 4, fame: 2 },
-        run: () => ({ text: '"축하해." 서하가 의외라는 듯 웃었다. 경쟁자인데 미워할 수가 없다.', deltas: { soc: 4, fame: 2, stress: -3 } }) },
+        run: () => ({ text: '"축하해." 도현이가 의외라는 듯 웃었다. 경쟁자인데 미워할 수가 없다.', deltas: { soc: 4, fame: 2, stress: -3 } }) },
     ],
   },
   // ----- 찬동이가 룸메일 때 -----
@@ -1380,7 +1380,7 @@ const RANDOM_EVENTS = [
     when: s => periodOf(s.turn) === 4, weight: () => 1,
     choices: [
       { label: '봉사 지원', exp: { fame: 5, penalty: -3 },
-        run: () => ({ text: '허리는 아프지만 할머니가 쪄 주신 고구마가 꿀맛. 사감 선생님도 칭찬했다.', deltas: { hp: -3, fame: 5, penalty: -3, stress: -3, warden: 6 } }) },
+        run: () => ({ text: '허리는 아프지만 할머니가 쪄 주신 고구마가 꿀맛. 해곤 쌤도 칭찬했다.', deltas: { hp: -3, fame: 5, penalty: -3, stress: -3, warden: 6 } }) },
       { label: '자습실 사수', exp: { int: 3 },
         run: () => ({ text: '창밖으로 콤바인 소리를 들으며 공부했다.', deltas: { int: 3 } }) },
     ],
@@ -1390,7 +1390,7 @@ const RANDOM_EVENTS = [
     when: s => periodOf(s.turn) === 5, weight: () => 1.2,
     choices: [
       { label: '운동장 눈싸움 대회', exp: { soc: 6, stress: -8 },
-        run: () => ({ text: '1학년 대 2학년 대 3학년. 사감 선생님도 눈을 던졌다.', deltas: { soc: 6, hp: -2, stress: -8, aff: 3 } }) },
+        run: () => ({ text: '1학년 대 2학년 대 3학년. 해곤 쌤도 눈을 던졌다.', deltas: { soc: 6, hp: -2, stress: -8, aff: 3 } }) },
       { label: '잔류 자습', exp: { int: 5, stress: 5 },
         run: () => ({ text: '고요한 설경 속 자습실. 집에 못 가서 서럽다.', deltas: { int: 5, stress: 6 } }) },
     ],
@@ -1435,14 +1435,14 @@ const RANDOM_EVENTS = [
     ],
   },
   {
-    id: 'room_check', title: '🔦 기습 방 검사', text: '밤 10시 반, 사감 선생님이 방문을 벌컥 열었다. "방 검사 하겠다." 사물함엔 몰래 사 둔 컵라면이…',
+    id: 'room_check', title: '🔦 기습 방 검사', text: '밤 10시 반, 해곤 쌤이 방문을 벌컥 열었다. "방 검사 하겠다." 사물함엔 몰래 사 둔 컵라면이…',
     when: () => true, weight: () => 1.4,
     choices: [
       { label: '솔직하게 내놓는다', exp: { penalty: 2 },
         run: () => ({ text: '"솔직하네." 벌점 2점으로 끝났다. 컵라면은 압수.', deltas: { penalty: 2, stress: 3 } }) },
       { label: '이불 속에 숨긴다', note: '55% 성공', exp: { stress: -3 },
         run: s => rollS(s, 0.55)
-          ? { text: '사감 선생님이 이불을 들추려다 말았다. 심장이 터질 뻔했다.', deltas: { soc: 3, stress: -3 } }
+          ? { text: '해곤 쌤이 이불을 들추려다 말았다. 심장이 터질 뻔했다.', deltas: { soc: 3, stress: -3 } }
           : { text: '이불을 들추자 컵라면 다섯 개가 와르르. 정적.', deltas: { penalty: 6, fame: -3, stress: 8 } } },
       { label: '룸메 사물함에 슬쩍 넣는다', exp: { soc: -10 },
         run: () => ({ text: '룸메가 대신 벌점을 받았다. 방 공기가 영하로 떨어졌다.', deltas: { soc: -10, stress: 6, aff: -20 } }) },
@@ -1455,7 +1455,7 @@ const RANDOM_EVENTS = [
       { label: '계단 세 칸씩 전력 질주', note: '체력 높을수록 성공↑', exp: { hp: -2 },
         run: s => rollS(s, clamp(0.2 + s.stats.hp * 0.009, 0.15, 0.9))
           ? { text: '점호 번호 부르기 1초 전 도착! 숨은 턱까지 찼지만 세이프.', deltas: { hp: -2, stress: -2 } }
-          : { text: '복도 끝에서 사감 선생님과 눈이 마주쳤다. 지각 벌점.', deltas: { penalty: 3, stress: 6 } } },
+          : { text: '복도 끝에서 해곤 쌤과 눈이 마주쳤다. 지각 벌점.', deltas: { penalty: 3, stress: 6 } } },
       { label: '룸메에게 대리 대답 부탁', note: '룸메 친밀도가 높을수록 성공↑ · 실패하면 둘 다 걸림', exp: { aff: 2 },
         run: s => rollS(s, clamp(0.2 + s.aff * 0.007, 0.2, 0.9))
           ? { text: '룸메가 목소리까지 흉내 냈다. 완벽한 팀워크.', deltas: { soc: 2, stress: -3, aff: 3 } }
@@ -1468,14 +1468,14 @@ const RANDOM_EVENTS = [
     choices: [
       { label: '올린 애한테 내려 달라고 부탁', note: '사회성 높을수록 성공↑', exp: { soc: 2 },
         run: s => rollS(s, clamp(0.25 + s.stats.soc * 0.008, 0.2, 0.9))
-          ? { text: '"헐 미안, 바로 지울게!" 사감 선생님이 보기 전에 사라졌다.', deltas: { soc: 2, stress: -4 } }
+          ? { text: '"헐 미안, 바로 지울게!" 해곤 쌤이 보기 전에 사라졌다.', deltas: { soc: 2, stress: -4 } }
           : { text: '지워 달라고 하는 사이 이미 캡처가 돌았다. 사감실 호출.', deltas: { penalty: 8, fame: -5, stress: 10 } } },
-      { label: '사감 선생님께 먼저 자수', exp: { penalty: 5, stress: -10 },
+      { label: '해곤 쌤께 먼저 자수', exp: { penalty: 5, stress: -10 },
         run: () => ({ text: '"먼저 말해 줘서 고맙다." 벌점은 받았지만 마음은 편하다.', deltas: { penalty: 5, fame: -2, stress: -10 } }) },
       { label: '모른 척 버틴다', note: '50% 확률로 발각', exp: { stress: 8 },
         run: s => rollS(s, 0.5)
           ? { text: '다행히 사진은 금방 묻혔다. 그런데 며칠 내내 잠을 설쳤다.', deltas: { stress: 10 } }
-          : { text: '사감 선생님 폰 화면에 그 사진이 떠 있었다. 끝났다.', deltas: { penalty: 10, fame: -6, stress: 12 } } },
+          : { text: '해곤 쌤 폰 화면에 그 사진이 떠 있었다. 끝났다.', deltas: { penalty: 10, fame: -6, stress: 12 } } },
     ],
   },
   {
@@ -1513,7 +1513,7 @@ const RANDOM_EVENTS = [
       { label: '옆방에 놀러 간다', note: '30% 확률로 순찰에 걸림', exp: { soc: 6, stress: -8 },
         run: s => rollS(s, 0.7)
           ? { text: '보드게임 판이 벌어졌다. 와이파이 없는 밤이 이렇게 재밌다니.', deltas: { soc: 6, stress: -8 } }
-          : { text: '순찰 돌던 사감 선생님께 딱 걸렸다. 타 호실 출입 벌점.', deltas: { penalty: 3, soc: 2, stress: 5 } } },
+          : { text: '순찰 돌던 해곤 쌤께 딱 걸렸다. 타 호실 출입 벌점.', deltas: { penalty: 3, soc: 2, stress: 5 } } },
     ],
   },
   {
@@ -1543,14 +1543,14 @@ const RANDOM_EVENTS = [
     ],
   },
   {
-    id: 'phone', title: '📱 몰래 쓰던 폰 압수', text: '제출 안 한 두 번째 폰으로 새벽에 유튜브를 보다가 사감 선생님과 눈이 마주쳤다.',
+    id: 'phone', title: '📱 몰래 쓰던 폰 압수', text: '제출 안 한 두 번째 폰으로 새벽에 유튜브를 보다가 해곤 쌤과 눈이 마주쳤다.',
     when: () => true, weight: () => 0.8,
     choices: [
       { label: '반성문을 쓴다', exp: { penalty: 2, soc: -3 },
         run: () => ({ text: 'A4 두 장을 꽉 채웠다. 단톡방 소식은 하나도 모르게 됐다.', deltas: { penalty: 2, soc: -3, stress: 4 } }) },
       { label: '"이거 공기계예요!" 우긴다', note: '35% 성공', exp: { stress: 4 },
         run: s => rollS(s, 0.35)
-          ? { text: '사감 선생님이 한숨을 쉬며 그냥 돌려줬다. 기적이다.', deltas: { soc: 3, stress: -3 } }
+          ? { text: '해곤 쌤이 한숨을 쉬며 그냥 돌려줬다. 기적이다.', deltas: { soc: 3, stress: -3 } }
           : { text: '거짓말까지 들켰다. 벌점이 두 배.', deltas: { penalty: 6, fame: -3, stress: 6 } } },
     ],
   },
@@ -2133,9 +2133,9 @@ const ACHIEVEMENTS = [
   { id: 'sci',      emoji: '🔬', name: '이과 졸업',         desc: '자연·공학 계열로 졸업',             test: s => graduated(s) && s.track === 'sci' },
   { id: 'tour',     emoji: '🏝️', name: '수학여행 만끽',     desc: '수학여행 관광 코스 다녀오기',       test: s => s.tripCourse === 'tour' },
   { id: 'japan',    emoji: '🇯🇵', name: '국제교류 대사',     desc: '수학여행 일본 학교 방문',           test: s => s.tripCourse === 'japan' },
-  { id: 'warden',   emoji: '👮', name: '사감 선생님의 총애', desc: '사감 선생님 호감도 90 이상',        test: s => s.warden >= 90 },
+  { id: 'warden',   emoji: '👮', name: '해곤 쌤의 총애', desc: '해곤 쌤 호감도 90 이상',        test: s => s.warden >= 90 },
   { id: 'bday',     emoji: '🎂', name: '생일 파티 주인공',  desc: '룸메들이 깜짝 생일 파티를 열어 주기', test: s => s.bigBirthday },
-  { id: 'tsFriend', emoji: '🧳', name: '전학생의 단짝',     desc: '전학생 서하와 친구가 되어 졸업',     test: s => graduated(s) && s.transfer === 'friend' },
+  { id: 'tsFriend', emoji: '🧳', name: '전학생의 단짝',     desc: '전학생 도현이와 친구가 되어 졸업',     test: s => graduated(s) && s.transfer === 'friend' },
   { id: 'rivalRoom',emoji: '✏️', name: '라이벌이자 친구',   desc: '룸메 찬동과 친밀도 80 이상으로 졸업', test: s => graduated(s) && hasRoommate(s, 'chandong') && affOf(s, 'chandong') >= 80 },
   { id: 'cheatBust',emoji: '📄', name: '검은 유혹',         desc: '족보를 보다가 들키기',               test: s => s.cheatCaught },
   { id: 'transfer', emoji: '🚚', name: '기숙사 부적응',     desc: '전학 엔딩 보기',                    test: s => !!(s.ending && s.ending.type === 'transfer') },
@@ -2174,7 +2174,7 @@ function endTurn(s) {
   if (hasRoommate(s, 'yejun') && s.contra.length) { setAff(s, 'yejun', affOf(s, 'yejun') - 3); roomAff.push({ id: 'yejun', d: -3 }); }
   if (hasRoommate(s, 'yumin') && has('kettle')) { setAff(s, 'yumin', affOf(s, 'yumin') + 3); roomAff.push({ id: 'yumin', d: 3 }); }
 
-  // 불시 방 검사: 물건마다 따로 걸릴 수 있다 (재원이는 사감 선생님 발소리를 먼저 듣는다)
+  // 불시 방 검사: 물건마다 따로 걸릴 수 있다 (재원이는 해곤 쌤 발소리를 먼저 듣는다)
   const inspectP = CONFIG.CONTRA_INSPECT - (hasRoommate(s, 'jaewon') && affOf(s, 'jaewon') >= 50 ? 0.05 : 0) + wardenInspectMod(s);
   const caughtIds = s.contra.filter(() => roll(inspectP));
   const caught = caughtIds.map(id => confiscate(s, id));
@@ -2318,7 +2318,7 @@ function albumHighlights(s) {
   L.push({ emoji: '🏫', title: '입학', text: `${STAT_NAME[s.focus]} 집중 육성 · 룸메 ${roommatesOf(s).map(r => r.name).join(', ')}` });
   if (s.bigBirthday) L.push({ emoji: '🎂', title: '깜짝 생일 파티', text: `${s.birthMonth}월, 룸메들이 케이크를 들고 들어왔다` });
   if (s.track) L.push({ emoji: s.track === 'sci' ? '🔬' : '📖', title: '계열 선택', text: TRACK_NAME[s.track] });
-  if (s.transfer && s.transfer !== 'none') L.push({ emoji: '🧳', title: '전학생 서하', text: s.transfer === 'friend' ? '첫 친구가 되어 3년을 함께' : '끝까지 엎치락뒤치락한 라이벌' });
+  if (s.transfer && s.transfer !== 'none') L.push({ emoji: '🧳', title: '전학생 도현', text: s.transfer === 'friend' ? '첫 친구가 되어 3년을 함께' : '끝까지 엎치락뒤치락한 라이벌' });
   if (s.tripCourse) L.push({ emoji: s.tripCourse === 'japan' ? '🇯🇵' : '🏝️', title: '수학여행', text: s.tripCourse === 'japan' ? '일본 자매 학교 방문' : '바다와 맛집, 숙소의 밤' });
   if (s.president) L.push({ emoji: '🗳️', title: '학생회장', text: s.presidentTerms >= 2 ? '연임 성공' : '당선' });
   if (best('school')) L.push({ emoji: '📋', title: '최고 내신', text: `${best('school')}등급` });
@@ -2329,7 +2329,7 @@ function albumHighlights(s) {
   if (s.contraBrought) L.push({ emoji: '🎒', title: '금지물품', text: `${s.contraBrought}번 반입 · ${s.contraLost || 0}번 압수` });
   if (s.outingCount) L.push({ emoji: '🏃', title: '무단외출', text: `${s.outingCount}번 성공` });
   if (s.burnouts) L.push({ emoji: '🔥', title: '번아웃', text: `${s.burnouts}번 쓰러졌다 일어남` });
-  L.push({ emoji: '👮', title: '사감 선생님', text: s.warden >= 70 ? '"너는 믿는다"' : (s.warden <= 30 ? '"너 이름 외웠다"' : '"무난한 학생"') });
+  L.push({ emoji: '👮', title: '해곤 쌤', text: s.warden >= 70 ? '"너는 믿는다"' : (s.warden <= 30 ? '"너 이름 외웠다"' : '"무난한 학생"') });
   return L;
 }
 
@@ -2362,7 +2362,7 @@ const ACHV_KEY = 'pungsan-achievements-v1';
 // ---------- 자동 업데이트 ----------
 // 새 버전을 올릴 때: 아래 APP_VERSION 과 version.json 의 "version" 을 같은 값으로 바꾼다.
 // 그러면 접속 중인 사람은 1분 안에 알림을 받고, 지금 판이 끝나면 새 버전으로 바뀐다.
-const APP_VERSION = '2026.11.26-1';
+const APP_VERSION = '2026.11.26-2';
 const VERSION_CHECK_MS = 60 * 1000;
 let remoteVersion = null;     // 서버에 올라온 최신 버전
 let newVersionReady = false;  // 새 버전이 기다리는 중인지
@@ -2550,7 +2550,7 @@ function playerHTML() {
         <div class="stats">${statsHTML}</div>
         <div class="gauges">${gauges}
           <div class="stat">
-            <div class="stat-top"><span>👮 사감 선생님 호감도</span><span class="stat-val">${s.warden}</span></div>
+            <div class="stat-top"><span>👮 사감 해곤 쌤 호감도</span><span class="stat-val">${s.warden}</span></div>
             <div class="bar"><i style="width:${s.warden}%;background:#4C6EF5"></i></div>
             <span class="small">${s.warden >= 70 ? '😊 신뢰: 벌점 -1, 검사 느슨' : (s.warden <= 30 ? '😠 요주의: 벌점 +1, 검사 깐깐' : '😐 보통')}</span>
           </div>
@@ -2675,7 +2675,7 @@ function welcomeHTML() {
         · 🚨 <b>벌점</b>: 무단외출·야식·폰·점호 지각… ${CONFIG.PENALTY_WARN}점이면 부모님 호출, ${CONFIG.PENALTY_OUT}점이면 강제 퇴사<br>
         · 📅 매 턴 실제 풍산고 학사일정 이벤트가 열린다 (전통문화체험, 문경새재, 학생회장 선거, 봉황축제…)<br>
         · 🏠 한 달마다 귀가는 필수, 사이사이 격주 주말엔 귀가할지 잔류할지 고른다<br>
-        · 👮 사감 선생님 호감도가 높으면 벌점을 깎아 주고, 낮으면 더 깐깐해진다. 생일엔 룸메들이 뭔가 준비할지도?<br>
+        · 👮 사감 해곤 쌤의 호감도가 높으면 벌점을 깎아 주고, 낮으면 더 깐깐해진다. 생일엔 룸메들이 뭔가 준비할지도?<br>
         · 🎒 복귀할 때 전기포트·전기매트 같은 반입 금지물품을 몰래 챙겨 내 옷장이나 룸메 옷장에 숨긴다. 내 옷장에서 걸리면 벌점, 룸메 옷장에서 걸리면… 우정이 끝난다<br>
         · 📝 모의고사(9등급)와 📋 중간·기말(내신 5등급)이 실제 일정대로. 시험마다 전교 1등 라이벌 <b>${RIVAL_NAME}</b>과 등급 대결<br>
         · 3학년 마지막엔 수능. 모든 능력치 ${CONFIG.DANGER_LINE} 이상이어야 졸업
@@ -3172,7 +3172,7 @@ function endingHTML() {
   }
   // 실패 엔딩들
   const info = {
-    expel: { emoji: '🚨', title: '강제 퇴사 · 퇴학', msg: '기숙사 짐을 싸서 풍산읍 버스 정류장에 섰다. 사감 선생님의 손전등 불빛이 아직도 눈에 선하다…' },
+    expel: { emoji: '🚨', title: '강제 퇴사 · 퇴학', msg: '기숙사 짐을 싸서 풍산읍 버스 정류장에 섰다. 해곤 쌤의 손전등 불빛이 아직도 눈에 선하다…' },
     transfer: { emoji: '🚚', title: '전학', msg: '기숙사 적응에 실패해 결국 짐을 쌌다. 방문 이름표가 떼어졌다.' },
     fail_stats: { emoji: '📉', title: '졸업 사정 탈락', msg: '마지막까지 버텼지만 기준에 못 미쳤다.' },
   }[e.type];
