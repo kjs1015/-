@@ -351,8 +351,9 @@ const CONFIG = {
   TOTAL_TURNS: 15,          // 3년 = 15턴 (한 학년 = 5시기)
   START_STAT: 45,           // 모든 능력치 시작값
   FOCUS_BONUS: 10,          // 처음 고른 능력치 보너스
-  DANGER_LINE: 25,          // 이 값 미만이면 '위험' 상태
-  STREAK_TO_TRANSFER: 2,    // 위험 상태가 몇 턴 연속이면 전학인지
+  DANGER_LINE: 20,          // 이 값 미만이면 '위기' 상태 (전학은 없고, 대신 매 턴 위기 패널티)
+  CRISIS_STRESS: 15,        // 위기 능력치 하나당 스트레스 증가 (연속이면 점점 커진다)
+  CRISIS_DRAIN: 4,          // 위기 능력치 하나당 나머지 능력치 감소
   DECAY: { int: 6, hp: 6, soc: 5, fame: 4 },   // 매 턴 자연 감소량
   HIGH_LINE: 75,            // 이 값 이상인 능력치는 유지비가 더 든다
   HIGH_EXTRA_DECAY: 3,
@@ -2138,12 +2139,12 @@ const ACHIEVEMENTS = [
   { id: 'tsFriend', emoji: '🧳', name: '전학생의 단짝',     desc: '전학생 도현이와 친구가 되어 졸업',     test: s => graduated(s) && s.transfer === 'friend' },
   { id: 'rivalRoom',emoji: '✏️', name: '라이벌이자 친구',   desc: '룸메 찬동과 친밀도 80 이상으로 졸업', test: s => graduated(s) && hasRoommate(s, 'chandong') && affOf(s, 'chandong') >= 80 },
   { id: 'cheatBust',emoji: '📄', name: '검은 유혹',         desc: '족보를 보다가 들키기',               test: s => s.cheatCaught },
-  { id: 'transfer', emoji: '🚚', name: '기숙사 부적응',     desc: '전학 엔딩 보기',                    test: s => !!(s.ending && s.ending.type === 'transfer') },
+  { id: 'crisis',   emoji: '💥', name: '벼랑 끝 생존자',    desc: '위기 패널티를 5번 이상 받고도 졸업', test: s => graduated(s) && (s.crisisCount || 0) >= 5 },
   { id: 'expel',    emoji: '🚨', name: '강제 퇴사',         desc: '퇴학 엔딩 보기',                    test: s => !!(s.ending && s.ending.type === 'expel') },
 ];
 function earnedAchievements(s) { return ACHIEVEMENTS.filter(a => { try { return a.test(s); } catch (e) { return false; } }).map(a => a.id); }
 
-// ---------- 13. 턴 종료: 자연 감소 + 스트레스 + 전학 판정 ----------
+// ---------- 13. 턴 종료: 자연 감소 + 스트레스 + 위기 패널티 ----------
 function endTurn(s) {
   const has = id => s.contra.includes(id);
   const decay = {};
@@ -2185,6 +2186,32 @@ function endTurn(s) {
   }
   const warnedBefore = s.penaltyWarned;
 
+  // 위기 패널티: 20 미만인 능력치가 있으면 매 턴 크게 흔들린다 (연속일수록 더 세게)
+  const CRISIS_TEXT = {
+    int: '수업을 전혀 못 따라간다. 선생님 말이 외계어처럼 들린다.',
+    hp: '수업 중에 쓰러져 보건실에 실려 갔다.',
+    soc: '반에서 아무도 말을 걸지 않는다. 급식도 혼자 먹었다.',
+    fame: '존재감이 0이 됐다. 출석 부를 때 선생님이 이름을 두 번 불렀다.',
+  };
+  const crisis = [];
+  const crisisDeltas = [];
+  for (const key of STATS) {
+    if (s.stats[key] < CONFIG.DANGER_LINE) {
+      s.lowStreak[key] += 1;
+      const mult = 1 + (s.lowStreak[key] - 1) * 0.5;   // 1턴째 ×1, 2턴째 ×1.5, 3턴째 ×2 …
+      const d = { stress: Math.round(CONFIG.CRISIS_STRESS * mult) };
+      for (const k of STATS) if (k !== key) d[k] = -Math.round(CONFIG.CRISIS_DRAIN * mult);
+      crisisDeltas.push(d);
+      crisis.push({ key: key, streak: s.lowStreak[key], text: CRISIS_TEXT[key] });
+    } else s.lowStreak[key] = 0;
+  }
+  let crisisReal = null;
+  if (crisis.length) {
+    s.crisisCount = (s.crisisCount || 0) + crisis.length;
+    crisisReal = applyChanges(s, mergeDeltas(crisisDeltas));
+    addLog(s, '💥', `위기 패널티 (${crisis.map(c => STAT_NAME[c.key]).join(', ')} ${CONFIG.DANGER_LINE} 미만): ${changesToText(crisisReal)}`);
+  }
+
   let burnout = null;
   if (s.stress >= CONFIG.STRESS_MAX) {
     s.burnouts += 1;
@@ -2194,31 +2221,18 @@ function endTurn(s) {
     addLog(s, '🔥', `번아웃! ${changesToText(real)} (스트레스 55로 초기화)`);
   }
 
-  const warnings = [];
-  let transferKey = null;
-  for (const key of STATS) {
-    if (s.stats[key] < CONFIG.DANGER_LINE) {
-      s.lowStreak[key] += 1;
-      if (s.lowStreak[key] >= CONFIG.STREAK_TO_TRANSFER) transferKey = key;
-      else warnings.push(key);
-    } else s.lowStreak[key] = 0;
-  }
+  const warnings = STATS.filter(k => s.stats[k] < CONFIG.DANGER_LINE);   // 다음 턴에도 위기가 될 능력치
 
   const total = {};
   for (const key of STATS) total[key] = s.stats[key] - s.turnStartStats[key];
   total.stress = s.stress - s.turnStartStress;
   total.penalty = s.penalty - s.turnStartPenalty;
   s.summary = { turn: s.turn, decay: decay, total: total, warnings: warnings, burnout: burnout, moneyNow: s.money, roomFx: roomFx,
-    contraFx: contraReal, contraStress: contraStress, roomAff: roomAff, caught: caught.map(r => r.text), caughtChanges: caught.changes || null };
+    contraFx: contraReal, contraStress: contraStress, roomAff: roomAff, caught: caught.map(r => r.text), caughtChanges: caught.changes || null,
+    crisis: crisis, crisisChanges: crisisReal };
   if (checkPenalty(s)) return;
   if (!warnedBefore && s.penaltyWarned) s.summary.warnText = `📞 벌점 ${s.penalty}점! 부모님이 학교에 호출됐다. ${CONFIG.PENALTY_OUT}점이 되면 퇴사다.`;
 
-  if (transferKey) {
-    s.ending = { type: 'transfer', stat: transferKey, reason: `${STAT_NAME[transferKey]} ${CONFIG.DANGER_LINE} 미만 ${CONFIG.STREAK_TO_TRANSFER}턴 연속 → 기숙사 적응 실패로 전학` };
-    addLog(s, '🚚', s.ending.reason);
-    s.phase = 'gameover';
-    return;
-  }
   if (warnings.length) addLog(s, '⚠️', `위험 경고: ${warnings.map(k => STAT_NAME[k]).join(', ')} ${CONFIG.DANGER_LINE} 미만`);
   s.phase = 'summary';
 }
@@ -2362,7 +2376,7 @@ const ACHV_KEY = 'pungsan-achievements-v1';
 // ---------- 자동 업데이트 ----------
 // 새 버전을 올릴 때: 아래 APP_VERSION 과 version.json 의 "version" 을 같은 값으로 바꾼다.
 // 그러면 접속 중인 사람은 1분 안에 알림을 받고, 지금 판이 끝나면 새 버전으로 바뀐다.
-const APP_VERSION = '2026.11.26-2';
+const APP_VERSION = '2026.11.27-1';
 const VERSION_CHECK_MS = 60 * 1000;
 let remoteVersion = null;     // 서버에 올라온 최신 버전
 let newVersionReady = false;  // 새 버전이 기다리는 중인지
@@ -2590,7 +2604,7 @@ function titleHTML() {
       </div>
       <div class="rules">
         <div class="rule"><b>🎯 목표</b>실제 학사일정대로 3년(15턴)을 버티고 수능까지 보기</div>
-        <div class="rule"><b>🚚 전학</b>능력치가 ${CONFIG.DANGER_LINE} 미만인 채로 ${CONFIG.STREAK_TO_TRANSFER}턴 연속이면 전학</div>
+        <div class="rule"><b>💥 위기</b>능력치가 ${CONFIG.DANGER_LINE} 미만이면 매 턴 위기 패널티. 연속일수록 더 세진다</div>
         <div class="rule"><b>🚨 퇴사</b>기숙사 벌점 ${CONFIG.PENALTY_OUT}점이면 강제 퇴사 = 퇴학</div>
         <div class="rule"><b>🔥 번아웃</b>스트레스가 100이 되면 모든 게 무너진다</div>
       </div>
@@ -3060,8 +3074,9 @@ function summaryHTML() {
   if (sum.roomFx < 0) alerts += `<div class="info">🤝 룸메들과 사이가 좋아서 스트레스가 덜 쌓였다 (${sum.roomFx})</div>`;
   if (sum.roomFx > 0) alerts += `<div class="alert">🥶 방 분위기가 냉랭해서 방에 있는 게 괴롭다 (스트레스 +${sum.roomFx})</div>`;
   if (sum.burnout) alerts += `<div class="alert">🔥 번아웃! 쌓인 스트레스가 터졌다. 며칠을 침대에서 못 일어났다. (${changesToText(sum.burnout)}, 스트레스 55로)</div>`;
+  if (sum.crisis && sum.crisis.length) alerts += `<div class="alert">💥 위기 패널티!<br>${sum.crisis.map(c => `· ${STAT_EMOJI[c.key]} ${STAT_NAME[c.key]} ${CONFIG.DANGER_LINE} 미만${c.streak > 1 ? ` (${c.streak}턴 연속, ×${1 + (c.streak - 1) * 0.5})` : ''}: ${c.text}`).join('<br>')}${sum.crisisChanges ? `<div class="chips" style="margin-top:6px">${chipsHTML(sum.crisisChanges)}</div>` : ''}</div>`;
   for (const k of sum.warnings) {
-    alerts += `<div class="alert">⚠️ ${STAT_NAME[k]}${josa(STAT_NAME[k], "이", "가")} ${CONFIG.DANGER_LINE} 미만! 다음 턴이 끝날 때까지 ${CONFIG.DANGER_LINE} 이상으로 올리지 못하면 전학이다.</div>`;
+    alerts += `<div class="alert">⚠️ ${STAT_NAME[k]}${josa(STAT_NAME[k], "이", "가")} 아직 ${CONFIG.DANGER_LINE} 미만! 다음 시기 안에 못 올리면 위기 패널티가 더 세진다.</div>`;
   }
   const last = s.turn >= CONFIG.TOTAL_TURNS;
   let preview = '';
@@ -3088,7 +3103,7 @@ function summaryHTML() {
 
 function finalHTML() {
   const low = failedStats(s);
-  let checks = `<div class="check">✅ 전학·퇴학 없이 3년 완주</div>`;
+  let checks = `<div class="check">✅ 퇴학 없이 3년 완주</div>`;
   for (const k of STATS) {
     const ok = s.stats[k] >= CONFIG.DANGER_LINE;
     checks += `<div class="check">${ok ? '✅' : '❌'} ${STAT_EMOJI[k]} ${STAT_NAME[k]} ${s.stats[k]} ${ok ? '' : `(기준 ${CONFIG.DANGER_LINE} 미달)`}</div>`;
@@ -3249,7 +3264,7 @@ function render() {
   const stageCard = app.querySelector('main .card');
   if (stageCard && !gameFinished() && s.phase !== 'welcome' && s.phase !== 'final') {
     const crisis = [];
-    for (const k of STATS) if (s.stats[k] < CONFIG.DANGER_LINE) crisis.push(`${STAT_EMOJI[k]} ${STAT_NAME[k]} ${s.stats[k]}: 위험선 아래! ${s.lowStreak[k] ? '이번 시기 안에 못 올리면 전학' : ''}`);
+    for (const k of STATS) if (s.stats[k] < CONFIG.DANGER_LINE) crisis.push(`${STAT_EMOJI[k]} ${STAT_NAME[k]} ${s.stats[k]}: 위험선 아래! 이번 시기에 못 올리면 위기 패널티 (스트레스 +${Math.round(CONFIG.CRISIS_STRESS * (1 + s.lowStreak[k] * 0.5))}, 다른 능력치 -${Math.round(CONFIG.CRISIS_DRAIN * (1 + s.lowStreak[k] * 0.5))})`);
     if (s.stress >= 85) crisis.push(`😵 스트레스 ${s.stress}: 번아웃 직전!`);
     if (s.penalty >= CONFIG.PENALTY_OUT - 6) crisis.push(`🚨 벌점 ${s.penalty}/${CONFIG.PENALTY_OUT}: 한 번만 더 걸리면 퇴사!`);
     if (crisis.length) stageCard.insertAdjacentHTML('afterbegin', `<div class="crisis">${crisis.map(c => `<span>${c}</span>`).join('')}</div>`);
